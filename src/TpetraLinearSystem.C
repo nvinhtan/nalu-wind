@@ -259,17 +259,10 @@ TpetraLinearSystem::beginLinearSystemConstruction()
   unsigned  owned_nodes_csz=0;
   unsigned shared_not_owned_nodes_csz=0;
 
-  // owned_nodes.reserve(numOwnedNodes);
-  // shared_not_owned_nodes.reserve(numSharedNotOwnedNotLocallyOwned);
-
-  // std::vector<GlobalOrdinal> ownedGids, sharedNotOwnedGids;
-  // ownedGids.reserve(maxOwnedRowId_);
-  // sharedNotOwnedGids.reserve(numSharedNotOwnedNotLocallyOwned*numDof_);
-  // sharedPids_.reserve(sharedNotOwnedGids.capacity());
- std::unique_ptr<GlobalOrdinal[]> ownedGids(new GlobalOrdinal[maxOwnedRowId_]);
- std::unique_ptr<GlobalOrdinal[]> sharedNotOwnedGids(new GlobalOrdinal[numSharedNotOwnedNotLocallyOwned*numDof_]);
- unsigned  ownedGids_csz=0;
- unsigned sharedNotOwnedGids_csz=0;
+  std::unique_ptr<GlobalOrdinal[]> ownedGids(new GlobalOrdinal[maxOwnedRowId_]);
+  std::unique_ptr<GlobalOrdinal[]> sharedNotOwnedGids(new GlobalOrdinal[numSharedNotOwnedNotLocallyOwned*numDof_]);
+  unsigned  ownedGids_csz=0;
+  unsigned sharedNotOwnedGids_csz=0;
 
   // owned first:
   for(const stk::mesh::Bucket* bptr : buckets) {
@@ -281,17 +274,12 @@ TpetraLinearSystem::beginLinearSystemConstruction()
     }
   }
 
-  //  std::vector<stk::mesh::Entity> Vowned_nodes(owned_nodes.get(),owned_nodes.get()+owned_nodes_csz);
-  //  std::sort(owned_nodes.begin(), owned_nodes.end(), CompareEntityById(bulkData, realm_.naluGlobalId_) );
   std::sort(owned_nodes.get(), owned_nodes.get()+owned_nodes_csz, CompareEntityById(bulkData, realm_.naluGlobalId_) );
-
-  //  std::vector<stk::mesh::Entity>::iterator iter = std::unique(owned_nodes.begin(), owned_nodes.end(), CompareEntityEqualById(bulkData, realm_.naluGlobalId_));
   auto u_ptr =  std::unique(owned_nodes.get(), owned_nodes.get()+owned_nodes_csz, CompareEntityEqualById(bulkData, realm_.naluGlobalId_));
   owned_nodes_csz = (u_ptr - owned_nodes.get()) ; // pointer math to get length. 
 
   myLIDs_.clear();
   //KOKKOS: Loop noparallel push_back totalGids_ (std::vector)
-  //  for(stk::mesh::Entity entity : owned_nodes) {
   for(unsigned i=0;i<owned_nodes_csz;++i) {
     auto entity = owned_nodes[i];
     const stk::mesh::EntityId entityId = *stk::mesh::field_data(*realm_.naluGlobalId_, entity);
