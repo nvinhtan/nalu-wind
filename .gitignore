@@ -9,12 +9,4 @@
 tags
 *.save
 .nfs*
-reg_tests/xml/*.xml
-*.cmake
-CMakeCache.*
-CMakeFiles/
-Makefile
-*/*/*cmake
-*/*/Makefile
-*/*/CMakeFiles/
 

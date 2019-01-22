@@ -337,10 +337,17 @@ TpetraLinearSystem::beginLinearSystemConstruction()
   exporter_ = Teuchos::rcp(new LinSys::Export(sharedNotOwnedRowsMap_, ownedRowsMap_));
 
   fill_entity_to_row_LID_mapping();
-  ownedAndSharedNodes_.reserve(owned_nodes_csz+shared_not_owned_nodes_csz);
-  ownedAndSharedNodes_.insert(ownedAndSharedNodes_.end(), owned_nodes.get(),owned_nodes.get()+owned_nodes_csz);
-  ownedAndSharedNodes_.insert(ownedAndSharedNodes_.end(), shared_not_owned_nodes.get(), shared_not_owned_nodes.get()+shared_not_owned_nodes_csz);
-  connections_.resize(ownedAndSharedNodes_.size());
+  ownedAndSharedNodes_= std::unique_ptr<stk::mesh::Entity[]>(new stk::mesh::Entity[owned_nodes_csz+shared_not_owned_nodes_csz]);
+  ownedAndSharedNodes_csz_ = owned_nodes_csz+shared_not_owned_nodes_csz;
+  std::copy(owned_nodes.get(),owned_nodes.get()+owned_nodes_csz,ownedAndSharedNodes_.get());
+  
+  //  ownedAndSharedNodes_.insert(ownedAndSharedNodes_.get(), owned_nodes.get(),owned_nodes.get()+owned_nodes_csz);
+  std::copy(shared_not_owned_nodes.get(), 
+            shared_not_owned_nodes.get()+shared_not_owned_nodes_csz,
+            ownedAndSharedNodes_.get()+owned_nodes_csz);
+  //  ownedAndSharedNodes_.insert(ownedAndSharedNodes_.get()+owned_nodes_csz, shared_not_owned_nodes.get(), shared_not_owned_nodes.get()+shared_not_owned_nodes_csz);
+
+  connections_.resize(owned_nodes_csz+shared_not_owned_nodes_csz);
   for(std::vector<stk::mesh::Entity>& vec : connections_) { vec.reserve(8); }
 }
 
@@ -348,7 +355,7 @@ int TpetraLinearSystem::insert_connection(stk::mesh::Entity a, stk::mesh::Entity
 {
     size_t idx = entityToLID_[a.local_offset()]/numDof_;
 
-    ThrowRequireMsg(idx < ownedAndSharedNodes_.size(),"Error, insert_connection got index out of range.");
+    ThrowRequireMsg(idx < ownedAndSharedNodes_csz_,"Error, insert_connection got index out of range.");
 
     bool correctEntity = ownedAndSharedNodes_[idx] == a;
     if (!correctEntity) {
@@ -762,17 +769,18 @@ size_t get_neighbor_index(const std::vector<int>& neighborProcs, int proc)
 }
 
 void
-TpetraLinearSystem::compute_send_lengths(const std::vector<stk::mesh::Entity>& rowEntities,
-        const std::vector<std::vector<stk::mesh::Entity> >& connections,
-                          const std::vector<int>& neighborProcs,
-                          stk::CommNeighbors& commNeighbors)
+TpetraLinearSystem::compute_send_lengths(const std::unique_ptr<stk::mesh::Entity[]> & rowEntities,
+                                         uint & rowEntities_csz,
+                                         const std::vector<std::vector<stk::mesh::Entity> >& connections,
+                                         const std::vector<int>& neighborProcs,
+                                         stk::CommNeighbors& commNeighbors)
 { 
   const stk::mesh::BulkData& bulk = realm_.bulk_data();
   std::vector<int> sendLengths(neighborProcs.size(), 0);
   size_t maxColEntities = 128;
   std::vector<stk::mesh::EntityId> colEntityIds(maxColEntities);
   
-  for(size_t i=0; i<rowEntities.size(); ++i)
+  for(size_t i=0; i<rowEntities_csz; ++i)
   { 
     const stk::mesh::Entity entity_a = rowEntities[i];
     const std::vector<stk::mesh::Entity>& colEntities = connections[i];
@@ -815,7 +823,8 @@ TpetraLinearSystem::compute_send_lengths(const std::vector<stk::mesh::Entity>& r
 }
 
 void
-TpetraLinearSystem::compute_graph_row_lengths(const std::vector<stk::mesh::Entity>& rowEntities,
+TpetraLinearSystem::compute_graph_row_lengths(const std::unique_ptr<stk::mesh::Entity[]>& rowEntities,
+                                              uint & rowEntities_csz,
         const std::vector<std::vector<stk::mesh::Entity> >& connections,
                                               LinSys::RowLengths& sharedNotOwnedRowLengths,
                                               LinSys::RowLengths& locallyOwnedRowLengths,
@@ -830,7 +839,7 @@ TpetraLinearSystem::compute_graph_row_lengths(const std::vector<stk::mesh::Entit
   std::vector<stk::mesh::EntityId> colEntityIds(maxColEntities);
   std::vector<int> colOwners(maxColEntities);
 
-  for(size_t i=0; i<rowEntities.size(); ++i)
+  for(size_t i=0; i<rowEntities_csz; ++i)
   {
     const std::vector<stk::mesh::Entity>& colEntities = connections[i];
     unsigned numColEntities = colEntities.size();
@@ -890,7 +899,8 @@ insert_single_dof_row_into_graph(LocalGraphArrays& crsGraph, LocalOrdinal rowLid
 }
 
 void
-TpetraLinearSystem::insert_graph_connections(const std::vector<stk::mesh::Entity>& rowEntities,
+TpetraLinearSystem::insert_graph_connections(const std::unique_ptr<stk::mesh::Entity[]>& rowEntities,
+                                             uint & rowEntities_csz,
          const std::vector<std::vector<stk::mesh::Entity> >& connections,
                                              LocalGraphArrays& locallyOwnedGraph,
                                              LocalGraphArrays& sharedNotOwnedGraph)
@@ -901,7 +911,7 @@ TpetraLinearSystem::insert_graph_connections(const std::vector<stk::mesh::Entity
   std::vector<LocalOrdinal> localDofs_b(max);
  
   //KOKKOS: Loop noparallel Graph insert
-  for(size_t i=0; i<rowEntities.size(); ++i) {
+  for(size_t i=0; i<rowEntities_csz; ++i) {
     const std::vector<stk::mesh::Entity>& entities_b = connections[i];
     unsigned numColEntities = entities_b.size();
     dofStatus.resize(numColEntities);
@@ -1059,8 +1069,6 @@ void fill_neighbor_procs(std::vector<int>& neighborProcs,
 }
 
 void fill_owned_and_shared_then_nonowned_ordered_by_proc(
-                                                         // std::vector<GlobalOrdinal>& totalGids,
-                                                         // std::vector<int>& srcPids,
                                                          std::unique_ptr<GlobalOrdinal[]> &totalGids,
                                                          unsigned &totalGids_csz,
                                                          std::unique_ptr<int[]> &srcPids,
@@ -1072,11 +1080,6 @@ void fill_owned_and_shared_then_nonowned_ordered_by_proc(
                                                          const std::vector<int>& sharedPids)
 { 
   auto ownedIndices = ownedRowsMap->getMyGlobalIndices();
-  // totalGids.clear();
-  // totalGids.reserve(ownedIndices.size() + ownersAndGids.size());
-  
-  // srcPids.clear();
-  // srcPids.reserve(ownersAndGids.size());
   totalGids_csz = 0;
   srcPids_csz = 0;
    
@@ -1294,8 +1297,17 @@ TpetraLinearSystem::finalizeLinearSystem()
 
   stk::CommNeighbors commNeighbors(bulkData.parallel(), neighborProcs);
 
-  compute_send_lengths(ownedAndSharedNodes_, connections_, neighborProcs, commNeighbors);
-  compute_graph_row_lengths(ownedAndSharedNodes_, connections_, sharedNotOwnedRowLengths, locallyOwnedRowLengths, commNeighbors);
+  compute_send_lengths(ownedAndSharedNodes_, 
+                       ownedAndSharedNodes_csz_,
+                       connections_, 
+                       neighborProcs, 
+                       commNeighbors);
+  compute_graph_row_lengths(ownedAndSharedNodes_, 
+                            ownedAndSharedNodes_csz_,
+                            connections_, 
+                            sharedNotOwnedRowLengths, 
+                            locallyOwnedRowLengths, 
+                            commNeighbors);
 
   ownersAndGids_.clear();
   storeOwnersForShared();
@@ -1330,7 +1342,7 @@ TpetraLinearSystem::finalizeLinearSystem()
 
   fill_entity_to_col_LID_mapping();
 
-  insert_graph_connections(ownedAndSharedNodes_, connections_, ownedGraph, sharedNotOwnedGraph);
+  insert_graph_connections(ownedAndSharedNodes_, ownedAndSharedNodes_csz_,connections_, ownedGraph, sharedNotOwnedGraph);
 
   insert_communicated_col_indices(neighborProcs, commNeighbors, numDof_, ownedGraph, *ownedRowsMap_, *totalColsMap_);
 
