@@ -54,6 +54,7 @@
 #include <Tpetra_Vector.hpp>
 #include <Tpetra_Details_shortSort.hpp>
 #include <Tpetra_Details_makeOptimizedColMap.hpp>
+#include <Tpetra_computeRowAndColumnOneNorms.hpp>
 
 #include <Teuchos_VerboseObject.hpp>
 #include <Teuchos_FancyOStream.hpp>
@@ -188,9 +189,24 @@ stk::mesh::Entity get_entity_master(const stk::mesh::BulkData& bulk,
   return master;
 }
 
+namespace { // (anonymous)
+  struct NodeCounts {
+    LocalOrdinal numGhostNodes = 0;
+    LocalOrdinal numOwnedNodes = 0;
+    LocalOrdinal numNodes = 0;
+    LocalOrdinal numSharedNotOwnedNotLocallyOwned = 0; // these are nodes on other procs
+  };
+} // namespace (anonymous)
+
 void
 TpetraLinearSystem::beginLinearSystemConstruction()
 {
+  // 30-Jan-2019 If stk communication calls were made, how much of the setup code
+  // for TpetraLinearSystem could be skipped, and how would that affect performance. 
+  // stk::mesh::copy_owned_to_shared(bulk, fVec);
+  // stk::mesh::communicate_field_data(bulk.aura_ghosting(), fVec);
+  // see the bottom of  HypreLinearSystem::beginLinearSystemConstruction()
+
   if(inConstruction_) return;
   inConstruction_ = true;
   ThrowRequire(ownedGraph_.is_null());
@@ -208,43 +224,60 @@ TpetraLinearSystem::beginLinearSystemConstruction()
   // also have ghosted nodes due to the periodicGhosting. However, we want to exclude these
   // nodes
 
-  LocalOrdinal numGhostNodes = 0;
-  LocalOrdinal numOwnedNodes = 0;
-  LocalOrdinal numNodes = 0;
-  LocalOrdinal numSharedNotOwnedNotLocallyOwned = 0; // these are nodes on other procs
+  NodeCounts counts;
+
   // First, get the number of owned and sharedNotOwned (or num_sharedNotOwned_nodes = num_nodes - num_owned_nodes)
   //KOKKOS: BucketLoop parallel "reduce" is accumulating 4 sums
-  kokkos_parallel_for("Nalu::TpetraLinearSystem::beginLinearSystemConstructionA", buckets.size(), [&] (const int& ib) {
-    stk::mesh::Bucket & b = *buckets[ib];
-    const stk::mesh::Bucket::size_type length = b.size();
-    //KOKKOS: intra BucketLoop parallel reduce
-    for ( stk::mesh::Bucket::size_type k = 0 ; k < length ; ++k ) {
+  //
+  // 30-Jan-2019: This code is not thread correct, because different
+  // threads are updating the values nonatomically.  Atomic updates
+  // would be an easy correctness fix, but would be slow, because
+  // these are highly contended.  Just use a Kokkos::parallel_reduce
+  // instead on these four int values.  You could use either a struct
+  // with four ints in it, or an array of four ints. /ToDo
+  //
+  // mfh 30 Jan 2019: Nalu really needs to build abstractions for
+  // looping over buckets in parallel.  If they did that, they
+  // wouldn't need to write those todos "KOKKOS: intra Bucketloop"
+  // etc.  They could just write the inside of the bucket loop now,
+  // then move to using Kokkos team parallelism later by changing the
+  // inside of their "parallel_reduce_bucket_loop" construct.
+  //
+  //  kokkos_parallel_for("Nalu::TpetraLinearSystem::beginLinearSystemConstructionA", buckets.size(), [&] (const int& ib) {
+  kokkos_parallel_reduce
+    ( buckets.size(),
+     [&] (const int ib, NodeCounts& currentCounts) {
+                          
+      stk::mesh::Bucket & b = *buckets[ib];
+      const stk::mesh::Bucket::size_type length = b.size();
+      //KOKKOS: intra BucketLoop parallel reduce
+      for ( stk::mesh::Bucket::size_type k = 0 ; k < length ; ++k ) {
 
-      // get node
-      stk::mesh::Entity node = b[k];
-      int status = getDofStatus(node);
+        // get node
+        stk::mesh::Entity node = b[k];
+        int status = getDofStatus(node);
 
-      if (status & DS_SkippedDOF)
-        continue;
+        if (status & DS_SkippedDOF)
+          continue;
 
-      if (status & DS_OwnedDOF) {
-        numNodes++;
-        numOwnedNodes++;
+        if (status & DS_OwnedDOF) {
+          currentCounts.numNodes++;
+          currentCounts.numOwnedNodes++;
+        }
+
+        if (status & DS_SharedNotOwnedDOF) {
+          currentCounts.numNodes++;
+          currentCounts.numSharedNotOwnedNotLocallyOwned++;
+        }
+
+        if (status & DS_GhostedDOF) {
+          currentCounts.numGhostNodes++;
+        }
       }
+    }, counts,"Nalu::TpetraLinearSystem::beginLinearSystemConstructionA");
 
-      if (status & DS_SharedNotOwnedDOF) {
-        numNodes++;
-        numSharedNotOwnedNotLocallyOwned++;
-      }
-
-      if (status & DS_GhostedDOF) {
-        numGhostNodes++;
-      }
-    }
-  });
-
-  maxOwnedRowId_ = numOwnedNodes * numDof_;
-  maxSharedNotOwnedRowId_ = numNodes * numDof_;
+  maxOwnedRowId_ = counts.numOwnedNodes * numDof_;
+  maxSharedNotOwnedRowId_ = counts.numNodes * numDof_;
 
   // Next, grab all the global ids, owned first, then sharedNotOwned.
 
@@ -254,14 +287,14 @@ TpetraLinearSystem::beginLinearSystemConstruction()
 
   // make separate arrays that hold the owned and sharedNotOwned gids
 
-  std::unique_ptr<stk::mesh::Entity[]> owned_nodes(new stk::mesh::Entity[numOwnedNodes]);
-  std::unique_ptr<stk::mesh::Entity[]> shared_not_owned_nodes(new stk::mesh::Entity[numSharedNotOwnedNotLocallyOwned]);
+  std::unique_ptr<stk::mesh::Entity[]> owned_nodes(new stk::mesh::Entity[counts.numOwnedNodes]);
+  std::unique_ptr<stk::mesh::Entity[]> shared_not_owned_nodes(new stk::mesh::Entity[counts.numSharedNotOwnedNotLocallyOwned]);
   unsigned  owned_nodes_csz=0;
   unsigned shared_not_owned_nodes_csz=0;
 
   std::unique_ptr<GlobalOrdinal[]> ownedGids(new GlobalOrdinal[maxOwnedRowId_]);
-  std::unique_ptr<GlobalOrdinal[]> sharedNotOwnedGids(new GlobalOrdinal[numSharedNotOwnedNotLocallyOwned*numDof_]);
-  unsigned  ownedGids_csz=0;
+  std::unique_ptr<GlobalOrdinal[]> sharedNotOwnedGids(new GlobalOrdinal[counts.numSharedNotOwnedNotLocallyOwned*numDof_]);
+  unsigned ownedGids_csz=0;
   unsigned sharedNotOwnedGids_csz=0;
 
   // owned first:
@@ -289,7 +322,7 @@ TpetraLinearSystem::beginLinearSystemConstruction()
       ownedGids[ownedGids_csz++]=gid;
     }
   }
-  ThrowRequire(localId == numOwnedNodes);
+  ThrowRequire(localId == counts.numOwnedNodes);
   
   // now sharedNotOwned:
   for(const stk::mesh::Bucket* bptr : buckets) {
@@ -1296,7 +1329,12 @@ TpetraLinearSystem::finalizeLinearSystem()
   fill_neighbor_procs(neighborProcs, bulkData, realm_);
 
   stk::CommNeighbors commNeighbors(bulkData.parallel(), neighborProcs);
-
+  //mfh 30 Jan 2019: Tpetra developers are currently fixing CrsGraph
+  //for StaticProfile Export/Import, so that if your initial row
+  //lengths are not long enough for the incoming entries, the target
+  //graph will resize internally for you.  Once that it is done, it
+  //looks like we could delete this code that computes graph row
+  //lengths.
   compute_send_lengths(ownedAndSharedNodes_, 
                        ownedAndSharedNodes_csz_,
                        connections_, 
@@ -1319,8 +1357,6 @@ TpetraLinearSystem::finalizeLinearSystem()
 
   int localProc = bulkData.parallel_rank();
 
-  //  std::vector<GlobalOrdinal> optColGids;
-  //  std::vector<int> sourcePIDs;
   std::unique_ptr<GlobalOrdinal[]> optColGids;
   std::unique_ptr<int[]> sourcePIDs;
   
@@ -1351,6 +1387,11 @@ TpetraLinearSystem::finalizeLinearSystem()
 
   remove_invalid_indices(ownedGraph, ownedRowLengths);
 
+  // 30-jan-2019 CBL: The not yet finished FECrsGraph should be able
+  // to replace much of the pre-computing of various lengths and sizes
+  // into these graph constructors.
+
+
   sharedNotOwnedGraph_ = Teuchos::rcp(new LinSys::Graph(sharedNotOwnedRowsMap_, totalColsMap_, sharedNotOwnedRowLengths, Tpetra::StaticProfile));
  
   ownedGraph_ = Teuchos::rcp(new LinSys::Graph(ownedRowsMap_, totalColsMap_, locallyOwnedRowLengths, Tpetra::StaticProfile));
@@ -1366,8 +1407,16 @@ TpetraLinearSystem::finalizeLinearSystem()
   Teuchos::RCP<LinSys::Import> importer = Teuchos::rcp(new LinSys::Import(ownedRowsMap_, optColGids.get()+ownedRowLengths.size(), sourcePIDs.get(), sourcePIDs_csz, allowedToReorderLocally));
 
   ownedGraph_->expertStaticFillComplete(ownedRowsMap_, ownedRowsMap_, importer, Teuchos::null, params);
-  sharedNotOwnedGraph_->expertStaticFillComplete(ownedRowsMap_, ownedRowsMap_, Teuchos::null, Teuchos::null, params);
+  // 30-Jan-2019 CBL Since we already computed an exporter_ in
+  //  TpetraLinearSystem::beginLinearSystemConstruction(). lets use it
+  //  rather than force expertStaticFillComplete to create on from
+  //  scratch.
 
+
+  //  sharedNotOwnedGraph_->expertStaticFillComplete(ownedRowsMap_, ownedRowsMap_, Teuchos::null, Teuchos::null, params);
+  sharedNotOwnedGraph_->expertStaticFillComplete(ownedRowsMap_, ownedRowsMap_, Teuchos::null, exporter_, params);
+
+  // 30-Jan-2019 CBL look into changing this to FECrsMatrix
   ownedMatrix_ = Teuchos::rcp(new LinSys::Matrix(ownedGraph_));
   sharedNotOwnedMatrix_ = Teuchos::rcp(new LinSys::Matrix(sharedNotOwnedGraph_));
 
@@ -1382,16 +1431,21 @@ TpetraLinearSystem::finalizeLinearSystem()
 
   sln_ = Teuchos::rcp(new LinSys::Vector(ownedRowsMap_));
 
-  const int nDim = metaData.spatial_dimension();
-
-  Teuchos::RCP<LinSys::MultiVector> coords 
-    = Teuchos::RCP<LinSys::MultiVector>(new LinSys::MultiVector(sln_->getMap(), nDim));
-
   TpetraLinearSolver *linearSolver = reinterpret_cast<TpetraLinearSolver *>(linearSolver_);
-
-  VectorFieldType *coordinates = metaData.get_field<VectorFieldType>(stk::topology::NODE_RANK, realm_.get_coordinates_name());
-  if (linearSolver->activeMueLu())
+  Teuchos::RCP<LinSys::MultiVector> coords ;
+  if (linearSolver->activeMueLu()) {
+    const int nDim = metaData.spatial_dimension();
+    VectorFieldType *coordinates = metaData.get_field<VectorFieldType>(stk::topology::NODE_RANK, realm_.get_coordinates_name());
+    // 30-Jan-2019 CBL Note that the MultiVector constructor supports
+    // _not_ zero filling the MultiVector, however it is _not_ clear
+    // to me that copy_stk_to_tpetra doesn't assume zero filled
+    // values, as it loops over the field and calls
+    // replaceGlobalValue. \todo if copy_stk_to_tpetra does _not_
+    // assume zero values, then adding false as the 3'rd argument of
+    // the MultiVector constructor bypasses value initialization.
+    coords = Teuchos::RCP<LinSys::MultiVector>(new LinSys::MultiVector(sln_->getMap(), nDim));    
     copy_stk_to_tpetra(coordinates, coords);
+  }
 
   linearSolver->setupLinearSolver(sln_, ownedMatrix_, ownedRhs_, coords);
 }
@@ -1680,6 +1734,7 @@ TpetraLinearSystem::applyDirichletBCs(
 
         matrix->getLocalRowView(actualLocalId, indices, values);
         const size_t rowLength = values.size();
+        //The assignment of new_values is close to optimal, so don't change it; cbl 1/22/19
         if (rowLength > 0) {
           new_values.resize(rowLength);
           for(size_t i=0; i < rowLength; ++i) {
@@ -1734,10 +1789,8 @@ TpetraLinearSystem::prepareConstraints(
       matrix->getLocalRowView(actualLocalId, indices, values);
       const size_t rowLength = values.size();
       if (rowLength > 0) {
-        new_values.resize(rowLength);
-        for(size_t i=0; i < rowLength; ++i) {
-          new_values[i] = 0.0;
-        }
+        new_values.resize(0);
+        new_values.assign(rowLength,0.0);
         local_matrix.replaceValues(actualLocalId, &indices[0], rowLength, new_values.data(), internalMatrixIsSorted);
       }
       
@@ -1782,10 +1835,8 @@ TpetraLinearSystem::resetRows(
       matrix->getLocalRowView(actualLocalId, indices, values);
       const size_t rowLength = values.size();
       if (rowLength > 0) {
-        new_values.resize(rowLength);
-        for (size_t i=0; i < rowLength; i++) {
-          new_values[i] = 0.0;
-        }
+        new_values.resize(0);
+        new_values.assign(rowLength,0.0);
         local_matrix.replaceValues(actualLocalId, &indices[0], rowLength, new_values.data(), internalMatrixIsSorted);
       }
 
@@ -1826,12 +1877,17 @@ TpetraLinearSystem::solve(
 {
 
   TpetraLinearSolver *linearSolver = reinterpret_cast<TpetraLinearSolver *>(linearSolver_);
-
+  // 30-Jan-2019 CBL Wrap this section of error checking with timers.
   if ( realm_.debug() ) {
-    checkForNaN(true);
-    if (checkForZeroRow(true, false, true)) {
-      throw std::runtime_error("ERROR checkForZeroRow in solve()");
-    }
+    auto equibResult = Tpetra::computeRowAndColumnOneNorms (*sharedNotOwnedMatrix_, false );
+    if(equibResult.foundNan)  throw std::runtime_error("ERROR Check For NaN in solve()");
+    if(equibResult.foundZeroDiag)  throw std::runtime_error("ERROR Check for Zero Row in solve()");
+    if(equibResult.foundZeroRowNorm)  throw std::runtime_error("ERROR Check for Zero Row Norm in solve()");
+
+    // checkForNaN(true);
+    // if (checkForZeroRow(true, false, true)) {
+    //   throw std::runtime_error("ERROR checkForZeroRow in solve()");
+    // }
   }
    
   if (linearSolver->getConfig()->getWriteMatrixFiles()) {
@@ -1893,124 +1949,143 @@ TpetraLinearSystem::solve(
   return status;
 }
 
-void
-TpetraLinearSystem::checkForNaN(bool useOwned)
-{
-  Teuchos::RCP<LinSys::Matrix> matrix = useOwned ? ownedMatrix_ : sharedNotOwnedMatrix_;
-  Teuchos::RCP<LinSys::Vector> rhs = useOwned ? ownedRhs_ : sharedNotOwnedRhs_;
+// void
+// TpetraLinearSystem::checkForNaN(bool useOwned)
+// {
+//    // *****************************************
+//   // WARNING: This code is _not_ being fixed as its use is being replaced with
+//   // Tpetra::computeRowAndColumnOneNorms
+//   //*************************************************
+  
+//   std::cerr << "ABORT: You called TpetraLinearSystem::checkForNaN, this should not happen"<<std::endl<<std::flush;
+//   MPI_Abort(MPI_COMM_WORLD,999); // this is sub-optimal
 
-  Teuchos::ArrayView<const LocalOrdinal> indices;
-  Teuchos::ArrayView<const double> values;
 
-  size_t n = matrix->getRowMap()->getNodeNumElements();
-  for(size_t i=0; i<n; ++i) {
+//   Teuchos::RCP<LinSys::Matrix> matrix = useOwned ? ownedMatrix_ : sharedNotOwnedMatrix_;
+//   Teuchos::RCP<LinSys::Vector> rhs = useOwned ? ownedRhs_ : sharedNotOwnedRhs_;
 
-    matrix->getLocalRowView(i, indices, values);
-    const size_t rowLength = values.size();
-    for(size_t k=0; k < rowLength; ++k) {
-      if (values[k] != values[k])	{
-        std::cerr << "LHS NaN: " << i << std::endl;
-        throw std::runtime_error("bad LHS");
-      }
-    }
-  }
+//   Teuchos::ArrayView<const LocalOrdinal> indices;
+//   Teuchos::ArrayView<const double> values;
 
-  Teuchos::ArrayRCP<const Scalar> rhs_data = rhs->getData();
-  n = rhs_data.size();
-  for(size_t i=0; i<n; ++i) {
-    if (rhs_data[i] != rhs_data[i]) {
-      std::cerr << "rhs NaN: " << i << std::endl;
-      throw std::runtime_error("bad rhs");
-    }
-  }
-}
+//   size_t n = matrix->getRowMap()->getNodeNumElements();
+//   for(size_t i=0; i<n; ++i) {
 
-bool
-TpetraLinearSystem::checkForZeroRow(bool useOwned, bool doThrow, bool doPrint)
-{
-  Teuchos::RCP<LinSys::Matrix> matrix = useOwned ? ownedMatrix_ : sharedNotOwnedMatrix_;
-  Teuchos::RCP<LinSys::Vector> rhs = useOwned ? ownedRhs_ : sharedNotOwnedRhs_;
-  stk::mesh::BulkData & bulkData = realm_.bulk_data();
+//     matrix->getLocalRowView(i, indices, values);
+//     const size_t rowLength = values.size();
+//     for(size_t k=0; k < rowLength; ++k) {
+//       if (values[k] != values[k])	{
+//         std::cerr << "LHS NaN: " << i << std::endl;
+//         throw std::runtime_error("bad LHS");
+//       }
+//     }
+//   }
 
-  Teuchos::ArrayView<const LocalOrdinal> indices;
-  Teuchos::ArrayView<const double> values;
+//   Teuchos::ArrayRCP<const Scalar> rhs_data = rhs->getData();
+//   n = rhs_data.size();
+//   for(size_t i=0; i<n; ++i) {
+//     if (rhs_data[i] != rhs_data[i]) {
+//       std::cerr << "rhs NaN: " << i << std::endl;
+//       throw std::runtime_error("bad rhs");
+//     }
+//   }
+// }
 
-  size_t nrowG = matrix->getRangeMap()->getGlobalNumElements();
-  size_t n = matrix->getRowMap()->getNodeNumElements();
-  GlobalOrdinal max_gid = 0, g_max_gid=0;
-  //KOKKOS: Loop parallel reduce
-  kokkos_parallel_for("Nalu::TpetraLinearSystem::checkForZeroRowA", n, [&] (const size_t& i) {
-    GlobalOrdinal gid = matrix->getGraph()->getRowMap()->getGlobalElement(i);
-    max_gid = std::max(gid, max_gid);
-  });
-  stk::all_reduce_max(bulkData.parallel(), &max_gid, &g_max_gid, 1);
+// bool
+// TpetraLinearSystem::checkForZeroRow(bool useOwned, bool doThrow, bool doPrint)
+// {
+//   // *****************************************
+//   // WARNING: This code is _not_ being fixed as its use is being replaced with
+//   // Tpetra::computeRowAndColumnOneNorms
+//   //*************************************************
+  
+//   std::cerr << "ABORT: You called TpetraLinearSystem::checkForZeroRow, this should not happen"<<std::endl<<std::flush;
+//   MPI_Abort(MPI_COMM_WORLD,999); // this is sub-optimal
 
-  nrowG = g_max_gid+1;
-  std::vector<double> local_row_sums(nrowG, 0.0);
-  std::vector<int> local_row_exists(nrowG, 0);
-  std::vector<double> global_row_sums(nrowG, 0.0);
-  std::vector<int> global_row_exists(nrowG, 0);
+//   Teuchos::RCP<LinSys::Matrix> matrix = useOwned ? ownedMatrix_ : sharedNotOwnedMatrix_;
+//   Teuchos::RCP<LinSys::Vector> rhs = useOwned ? ownedRhs_ : sharedNotOwnedRhs_;
+//   stk::mesh::BulkData & bulkData = realm_.bulk_data();
 
-  for(size_t i=0; i<n; ++i) {
-    GlobalOrdinal gid = matrix->getGraph()->getRowMap()->getGlobalElement(i);
-    matrix->getLocalRowView(i, indices, values);
-    const size_t rowLength = values.size();
-    double row_sum = 0.0;
-    for(size_t k=0; k < rowLength; ++k) {
-      row_sum += std::abs(values[k]);
-    }
-    if (gid-1 >= (GlobalOrdinal)local_row_sums.size() || gid <= 0) {
-      std::cerr << "gid= " << gid << " nrowG= " << nrowG << std::endl;
-      throw std::runtime_error("bad gid");
-    }
-    local_row_sums[gid-1] = row_sum;
-    local_row_exists[gid-1] = 1;
-  }
+//   Teuchos::ArrayView<const LocalOrdinal> indices;
+//   Teuchos::ArrayView<const double> values;
 
-  stk::all_reduce_sum(bulkData.parallel(), &local_row_sums[0], &global_row_sums[0], (unsigned)nrowG);
-  stk::all_reduce_max(bulkData.parallel(), &local_row_exists[0], &global_row_exists[0], (unsigned)nrowG);
+//   size_t nrowG = matrix->getRangeMap()->getGlobalNumElements();
+//   size_t n = matrix->getRowMap()->getNodeNumElements();
+//   GlobalOrdinal max_gid = 0, g_max_gid=0;
+//   // 30-Jan-2019 CBL This code using RCP constructor inside the kokkos_parallel_for is not
+//   // thread safe, and causes a bunch of useless thrashing of reference counts.
+//   const auto & rm =  *(matrix->getGraph()->getRowMap());
+//   kokkos_parallel_for("Nalu::TpetraLinearSystem::checkForZeroRowA", n, [&] (const size_t& i) {
+//     GlobalOrdinal gid = rm.getGlobalElement(i);
+//     max_gid = std::max(gid, max_gid);
+//   });
+//   stk::all_reduce_max(bulkData.parallel(), &max_gid, &g_max_gid, 1);
 
-  bool found=false;
-  //KOKKOS: Loop parallel
-  kokkos_parallel_for("Nalu::TpetraLinearSystem::checkForZeroRowC", nrowG, [&] (const size_t& ii) {
-    double row_sum = global_row_sums[ii];
-    if (global_row_exists[ii] && bulkData.parallel_rank() == 0 && row_sum < 1.e-10) {
-      found = true;
-      GlobalOrdinal gid = ii+1;
-      stk::mesh::EntityId nid = GLOBAL_ENTITY_ID(gid, numDof_);
-      stk::mesh::Entity node = bulkData.get_entity(stk::topology::NODE_RANK, nid);
-      stk::mesh::EntityId naluGlobalId;
-      if (bulkData.is_valid(node)) naluGlobalId = *stk::mesh::field_data(*realm_.naluGlobalId_, node);
+//   nrowG = g_max_gid+1;
+//   std::vector<double> local_row_sums(nrowG, 0.0);
+//   std::vector<int> local_row_exists(nrowG, 0);
+//   std::vector<double> global_row_sums(nrowG, 0.0);
+//   std::vector<int> global_row_exists(nrowG, 0);
 
-      int idof = GLOBAL_ENTITY_ID_IDOF(gid, numDof_);
-      GlobalOrdinal GID_check = GID_(nid, numDof_, idof);
-      if (doPrint) {
+//   for(size_t i=0; i<n; ++i) {
+//     GlobalOrdinal gid = matrix->getGraph()->getRowMap()->getGlobalElement(i);
+//     matrix->getLocalRowView(i, indices, values);
+//     const size_t rowLength = values.size();
+//     double row_sum = 0.0;
+//     for(size_t k=0; k < rowLength; ++k) {
+//       row_sum += std::abs(values[k]);
+//     }
+//     if (gid-1 >= (GlobalOrdinal)local_row_sums.size() || gid <= 0) {
+//       std::cerr << "gid= " << gid << " nrowG= " << nrowG << std::endl;
+//       throw std::runtime_error("bad gid");
+//     }
+//     local_row_sums[gid-1] = row_sum;
+//     local_row_exists[gid-1] = 1;
+//   }
 
-        double dualVolume = -1.0;
+//   stk::all_reduce_sum(bulkData.parallel(), &local_row_sums[0], &global_row_sums[0], (unsigned)nrowG);
+//   stk::all_reduce_max(bulkData.parallel(), &local_row_exists[0], &global_row_exists[0], (unsigned)nrowG);
 
-        std::cout << "P[" << bulkData.parallel_rank() << "] LHS zero: " << ii
-                  << " GID= " << gid << " GID_check= " << GID_check << " nid= " << nid
-                  << " naluGlobalId " << naluGlobalId << " is_valid= " << bulkData.is_valid(node)
-                  << " idof= " << idof << " numDof_= " << numDof_
-                  << " row_sum= " << row_sum
-                  << " dualVolume= " << dualVolume
-                  << std::endl;
-        NaluEnv::self().naluOutputP0() << "P[" << bulkData.parallel_rank() << "] LHS zero: " << ii
-                        << " GID= " << gid << " GID_check= " << GID_check << " nid= " << nid
-                        << " naluGlobalId " << naluGlobalId << " is_valid= " << bulkData.is_valid(node)
-                        << " idof= " << idof << " numDof_= " << numDof_
-                        << " row_sum= " << row_sum
-                        << " dualVolume= " << dualVolume
-                        << std::endl;
-      }
-    }
-  });
+//   bool found=false;
+//   //KOKKOS: Loop parallel
+//   kokkos_parallel_for("Nalu::TpetraLinearSystem::checkForZeroRowC", nrowG, [&] (const size_t& ii) {
+//     double row_sum = global_row_sums[ii];
+//     if (global_row_exists[ii] && bulkData.parallel_rank() == 0 && row_sum < 1.e-10) {
+//       found = true;
+//       GlobalOrdinal gid = ii+1;
+//       stk::mesh::EntityId nid = GLOBAL_ENTITY_ID(gid, numDof_);
+//       stk::mesh::Entity node = bulkData.get_entity(stk::topology::NODE_RANK, nid);
+//       stk::mesh::EntityId naluGlobalId;
+//       if (bulkData.is_valid(node)) naluGlobalId = *stk::mesh::field_data(*realm_.naluGlobalId_, node);
 
-  if (found && doThrow) {
-    throw std::runtime_error("bad zero row LHS");
-  }
-  return found;
-}
+//       int idof = GLOBAL_ENTITY_ID_IDOF(gid, numDof_);
+//       GlobalOrdinal GID_check = GID_(nid, numDof_, idof);
+//       if (doPrint) {
+
+//         double dualVolume = -1.0;
+
+//         std::cout << "P[" << bulkData.parallel_rank() << "] LHS zero: " << ii
+//                   << " GID= " << gid << " GID_check= " << GID_check << " nid= " << nid
+//                   << " naluGlobalId " << naluGlobalId << " is_valid= " << bulkData.is_valid(node)
+//                   << " idof= " << idof << " numDof_= " << numDof_
+//                   << " row_sum= " << row_sum
+//                   << " dualVolume= " << dualVolume
+//                   << std::endl;
+//         NaluEnv::self().naluOutputP0() << "P[" << bulkData.parallel_rank() << "] LHS zero: " << ii
+//                         << " GID= " << gid << " GID_check= " << GID_check << " nid= " << nid
+//                         << " naluGlobalId " << naluGlobalId << " is_valid= " << bulkData.is_valid(node)
+//                         << " idof= " << idof << " numDof_= " << numDof_
+//                         << " row_sum= " << row_sum
+//                         << " dualVolume= " << dualVolume
+//                         << std::endl;
+//       }
+//     }
+//   });
+
+//   if (found && doThrow) {
+//     throw std::runtime_error("bad zero row LHS");
+//   }
+//   return found;
+// }
 
 void
 TpetraLinearSystem::writeToFile(const char * base_filename, bool useOwned)

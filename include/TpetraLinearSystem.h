@@ -179,8 +179,8 @@ private:
   int insert_connection(stk::mesh::Entity a, stk::mesh::Entity b);
   void addConnections(const stk::mesh::Entity* entities,const size_t&);
   void expand_unordered_map(unsigned newCapacityNeeded);
-  void checkForNaN(bool useOwned);
-  bool checkForZeroRow(bool useOwned, bool doThrow, bool doPrint=false);
+  /* void checkForNaN(bool useOwned); */
+  /* bool checkForZeroRow(bool useOwned, bool doThrow, bool doPrint=false); */
 
   std::unique_ptr<stk::mesh::Entity[]> ownedAndSharedNodes_;
   uint ownedAndSharedNodes_csz_;
