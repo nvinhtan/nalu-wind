@@ -357,15 +357,17 @@ TpetraLinearSystem::beginLinearSystemConstruction()
   }
   
   const Teuchos::RCP<LinSys::Comm> tpetraComm = Teuchos::rcp(new LinSys::Comm(bulkData.parallel()));
+
   ownedRowsMap_ = Teuchos::rcp(new LinSys::Map(Teuchos::OrdinalTraits<Tpetra::global_size_t>::invalid(),
-
-                                               std::vector<GlobalOrdinal>(ownedGids.get(),ownedGids.get()+ownedGids_csz),
-
-
- 1, tpetraComm, node_));
+                                               ownedGids.get(),
+                                               ownedGids_csz,
+                                               1, 
+                                               tpetraComm));
   sharedNotOwnedRowsMap_ = Teuchos::rcp(new LinSys::Map(Teuchos::OrdinalTraits<Tpetra::global_size_t>::invalid(), 
-                                                        std::vector<GlobalOrdinal>(sharedNotOwnedGids.get(),sharedNotOwnedGids.get()+sharedNotOwnedGids_csz),
-                                                        1, tpetraComm, node_));
+                                                        sharedNotOwnedGids.get(),
+                                                        sharedNotOwnedGids_csz,
+                                                        1, 
+                                                        tpetraComm));
 
   exporter_ = Teuchos::rcp(new LinSys::Export(sharedNotOwnedRowsMap_, ownedRowsMap_));
 
@@ -374,11 +376,9 @@ TpetraLinearSystem::beginLinearSystemConstruction()
   ownedAndSharedNodes_csz_ = owned_nodes_csz+shared_not_owned_nodes_csz;
   std::copy(owned_nodes.get(),owned_nodes.get()+owned_nodes_csz,ownedAndSharedNodes_.get());
   
-  //  ownedAndSharedNodes_.insert(ownedAndSharedNodes_.get(), owned_nodes.get(),owned_nodes.get()+owned_nodes_csz);
   std::copy(shared_not_owned_nodes.get(), 
             shared_not_owned_nodes.get()+shared_not_owned_nodes_csz,
             ownedAndSharedNodes_.get()+owned_nodes_csz);
-  //  ownedAndSharedNodes_.insert(ownedAndSharedNodes_.get()+owned_nodes_csz, shared_not_owned_nodes.get(), shared_not_owned_nodes.get()+shared_not_owned_nodes_csz);
 
   connections_.resize(owned_nodes_csz+shared_not_owned_nodes_csz);
   for(std::vector<stk::mesh::Entity>& vec : connections_) { vec.reserve(8); }
