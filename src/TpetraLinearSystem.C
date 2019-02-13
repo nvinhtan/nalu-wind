@@ -569,7 +569,7 @@ TpetraLinearSystem::buildFaceElemToNodeGraph(const stk::mesh::PartVector & parts
 }
 
 void
-TpetraLinearSystem::buildNonConformalNodeGraph(const stk::mesh::PartVector &parts)
+TpetraLinearSystem::buildNonConformalNodeGraph(const stk::mesh::PartVector & /* parts */)
 {
   stk::mesh::BulkData & bulkData = realm_.bulk_data();
   beginLinearSystemConstruction();
@@ -623,7 +623,7 @@ TpetraLinearSystem::buildNonConformalNodeGraph(const stk::mesh::PartVector &part
 }
 
 void
-TpetraLinearSystem::buildOversetNodeGraph(const stk::mesh::PartVector &parts)
+TpetraLinearSystem::buildOversetNodeGraph(const stk::mesh::PartVector & /* parts */)
 {
   // extract the rank
   const int theRank = NaluEnv::self().parallel_rank();
@@ -727,7 +727,7 @@ void add_to_length(ViewType& v_owned, ViewType& v_shared, unsigned numDof,
     }
 }
 
-void add_lengths_to_comm(const stk::mesh::BulkData& bulk,
+void add_lengths_to_comm(const stk::mesh::BulkData&  /* bulk */,
                          stk::CommNeighbors& commNeighbors,
                          int entity_a_owner,
                          stk::mesh::EntityId entityId_a,
@@ -1297,7 +1297,7 @@ void fill_in_extra_dof_rows_per_node(LocalGraphArrays& csg, int numDof)
   }
 }
 
-void verify_no_empty_connections(const std::vector<stk::mesh::Entity>& rowEntities,
+void verify_no_empty_connections(const std::vector<stk::mesh::Entity>&  /* rowEntities */,
         const std::vector<std::vector<stk::mesh::Entity> >& connections)
 {
   for(const std::vector<stk::mesh::Entity>& vec : connections) {
@@ -1562,7 +1562,7 @@ TpetraLinearSystem::sumInto(
       const SharedMemView<const double**> & lhs,
       const SharedMemView<int*> & localIds,
       const SharedMemView<int*> & sortPermutation,
-      const char * trace_tag)
+      const char *  /* trace_tag */)
 {
   constexpr bool forceAtomic = !std::is_same<sierra::nalu::DeviceSpace, Kokkos::Serial>::value;
 
@@ -1625,10 +1625,10 @@ void
 TpetraLinearSystem::sumInto(
   const std::vector<stk::mesh::Entity> & entities,
   std::vector<int> &scratchIds,
-  std::vector<double> &scratchVals,
+  std::vector<double> & /* scratchVals */,
   const std::vector<double> & rhs,
   const std::vector<double> & lhs,
-  const char *trace_tag
+  const char * /* trace_tag */
   )
 {
   const size_t n_obj = entities.size();

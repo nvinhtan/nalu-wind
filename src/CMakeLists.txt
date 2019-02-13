@@ -118,7 +118,6 @@ add_sources(GlobalSourceList
    MassFractionEquationSystem.C
    MaterialProperty.C
    MaterialPropertys.C
-   MeshMotionInfo.C
    MixtureFractionEquationSystem.C
    MomentumABLForceSrcNodeSuppAlg.C
    MomentumActuatorSrcNodeSuppAlg.C
@@ -151,7 +150,6 @@ add_sources(GlobalSourceList
    ScalarMassBackwardEulerNodeSuppAlg.C
    ScalarMassElemSuppAlgDep.C
    ScratchViews.C
-   ScratchViewsNGP.C
    ShearStressTransportEquationSystem.C
    SimpleErrorIndicatorElemAlgorithm.C
    SimpleErrorIndicatorScalarElemAlgorithm.C
@@ -179,6 +177,10 @@ add_sources(GlobalSourceList
    TurbViscSmagorinskyAlgorithm.C
    TurbViscWaleAlgorithm.C
    TurbulenceAveragingPostProcessing.C
+   AssembleWallDistEdgeSolverAlgorithm.C
+   AssembleWallDistNonConformalAlgorithm.C
+   WallDistEquationSystem.C
+   WallDistSrcNodeSuppAlg.C
    UnitTests.C
 )
 
@@ -190,7 +192,9 @@ endif()
 
 if(ENABLE_OPENFAST)
    add_sources(GlobalSourceList
+      ActuatorFAST.C
       ActuatorLineFAST.C
+      ActuatorDiskFAST.C
    )
 endif()
 
@@ -219,6 +223,7 @@ add_subdirectory(overset)
 add_subdirectory(pmr)
 add_subdirectory(property_evaluator)
 add_subdirectory(tabular_props)
+add_subdirectory(utils)
 add_subdirectory(user_functions)
 add_subdirectory(xfer)
 add_subdirectory(wind_energy)

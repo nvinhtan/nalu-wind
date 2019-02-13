@@ -134,7 +134,6 @@ add_sources(GlobalHeaderList
    MassFractionEquationSystem.h
    MaterialProperty.h
    MaterialPropertys.h
-   MeshMotionInfo.h
    MixtureFractionEquationSystem.h
    MomentumABLForceSrcNodeSuppAlg.h
    MomentumActuatorSrcNodeSuppAlg.h
@@ -205,7 +204,9 @@ add_sources(GlobalHeaderList
 
 if(ENABLE_OPENFAST)
    add_sources(GlobalHeaderList
+   	  ActuatorFAST.h
       ActuatorLineFAST.h
+      ActuatorDiskFAST.h
    )
 endif()
 
