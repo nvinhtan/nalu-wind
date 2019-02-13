@@ -5,7 +5,6 @@
 /*  directory structure                                                   */
 /*------------------------------------------------------------------------*/
 
-
 #include <TpetraLinearSystem.h>
 #include <NonConformalInfo.h>
 #include <NonConformalManager.h>
@@ -368,7 +367,6 @@ TpetraLinearSystem::beginLinearSystemConstruction()
                                                         sharedNotOwnedGids_csz,
                                                         1, 
                                                         tpetraComm));
-
   exporter_ = Teuchos::rcp(new LinSys::Export(sharedNotOwnedRowsMap_, ownedRowsMap_));
 
   fill_entity_to_row_LID_mapping();
@@ -1372,10 +1370,15 @@ TpetraLinearSystem::finalizeLinearSystem()
                                                       sharedPids_);
 
   const Teuchos::RCP<LinSys::Comm> tpetraComm = Teuchos::rcp(new LinSys::Comm(bulkData.parallel()));
+  // totalColsMap_ = Teuchos::rcp(new LinSys::Map(Teuchos::OrdinalTraits<Tpetra::global_size_t>::invalid(), 
+  //                                              std::vector<GlobalOrdinal>(optColGids.get(),optColGids.get()+optColGids_csz),
+  //                                                                         1, tpetraComm, node_));
   totalColsMap_ = Teuchos::rcp(new LinSys::Map(Teuchos::OrdinalTraits<Tpetra::global_size_t>::invalid(), 
-                                               std::vector<GlobalOrdinal>(optColGids.get(),optColGids.get()+optColGids_csz),
-                                                                          1, tpetraComm, node_));
-
+                                               optColGids.get(),
+                                               optColGids_csz,
+                                               1, 
+                                               tpetraComm, node_));
+  
   fill_entity_to_col_LID_mapping();
 
   insert_graph_connections(ownedAndSharedNodes_, ownedAndSharedNodes_csz_,connections_, ownedGraph, sharedNotOwnedGraph);
@@ -1416,7 +1419,6 @@ TpetraLinearSystem::finalizeLinearSystem()
   //  sharedNotOwnedGraph_->expertStaticFillComplete(ownedRowsMap_, ownedRowsMap_, Teuchos::null, Teuchos::null, params);
   sharedNotOwnedGraph_->expertStaticFillComplete(ownedRowsMap_, ownedRowsMap_, Teuchos::null, exporter_, params);
 
-  // 30-Jan-2019 CBL look into changing this to FECrsMatrix
   ownedMatrix_ = Teuchos::rcp(new LinSys::Matrix(ownedGraph_));
   sharedNotOwnedMatrix_ = Teuchos::rcp(new LinSys::Matrix(sharedNotOwnedGraph_));
 
@@ -2099,17 +2101,20 @@ TpetraLinearSystem::writeToFile(const char * base_filename, bool useOwned)
 
   const int currentCount = writeCounter_;
 
-  if (1)
+  if (0) // HACK! CBL turn this back on sometime
     {
-      std::ostringstream osLhs;
-      std::ostringstream osRhs;
-      osLhs << base_filename << "-" << (useOwned ? "O-":"G-") << currentCount << ".mm." << p_size; // A little hacky but whatever
-      osRhs << base_filename << "-" << (useOwned ? "O-":"G-") << currentCount << ".rhs." << p_size; // A little hacky but whatever
+      // std::ostringstream osLhs;
+      // std::ostringstream osRhs;
+      // osLhs << base_filename << "-" << (useOwned ? "O-":"G-") << currentCount << ".mm." << p_size; // A little hacky but whatever
+      // osRhs << base_filename << "-" << (useOwned ? "O-":"G-") << currentCount << ".rhs." << p_size; // A little hacky but whatever
 
-      Tpetra::MatrixMarket::Writer<LinSys::Matrix>::writeSparseFile(osLhs.str().c_str(), matrix,
-                                                                    eqSysName_, std::string("Tpetra matrix for: ")+eqSysName_, true);
-      typedef Tpetra::MatrixMarket::Writer<LinSys::Matrix> writer_type;
-      if (useOwned) writer_type::writeDenseFile (osRhs.str().c_str(), rhs);
+      // Tpetra::MatrixMarket::Writer<LinSys::Matrix>::writeSparseFile(osLhs.str().c_str(), 
+      //                                                               matrix,
+      //                                                               eqSysName_, 
+      //                                                               std::string("Tpetra matrix for: ")+eqSysName_, 
+      //                                                               true);
+      // typedef Tpetra::MatrixMarket::Writer<LinSys::Matrix> writer_type;
+      // if (useOwned) writer_type::writeDenseFile (osRhs.str().c_str(), rhs);
     }
 
   if (1)

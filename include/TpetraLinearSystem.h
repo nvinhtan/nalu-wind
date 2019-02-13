@@ -15,7 +15,7 @@
 
 #include <Kokkos_DefaultNode.hpp>
 #include <Tpetra_Vector.hpp>
-#include <Tpetra_CrsMatrix.hpp>
+#include <Tpetra_FECrsMatrix.hpp>
 
 #include <stk_mesh/base/Types.hpp>
 #include <stk_mesh/base/Entity.hpp>

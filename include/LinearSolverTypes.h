@@ -10,8 +10,8 @@
 #define LinearSolverTypes_h
 
 #include <KokkosInterface.h>
-#include <Tpetra_CrsGraph.hpp>
-#include <Tpetra_CrsMatrix.hpp>
+#include <Tpetra_FECrsGraph.hpp>
+#include <Tpetra_FECrsMatrix.hpp>
 #include <Tpetra_Vector.hpp>
 #include <Tpetra_MultiVector.hpp>
 
@@ -66,17 +66,17 @@ typedef double Scalar;
 
 typedef Kokkos::DualView<size_t*, DeviceSpace>                             RowLengths;
 typedef Tpetra::Map<LocalOrdinal, GlobalOrdinal>::node_type                Node;
-typedef Tpetra::CrsGraph< LocalOrdinal, GlobalOrdinal, Node>               Graph;
+typedef Tpetra::FECrsGraph< LocalOrdinal, GlobalOrdinal, Node>               Graph;
 typedef typename Graph::local_graph_type                                   LocalGraph;
 typedef Teuchos::MpiComm<int>                                              Comm;
 typedef Tpetra::Export< LocalOrdinal, GlobalOrdinal, Node >                Export;
 typedef Tpetra::Import< LocalOrdinal, GlobalOrdinal, Node >                Import;
 typedef Tpetra::Map<LocalOrdinal,GlobalOrdinal,Node>                       Map;
-typedef Tpetra::MultiVector<Scalar,LocalOrdinal,GlobalOrdinal,Node>        MultiVector;
+typedef Tpetra::FEMultiVector<Scalar,LocalOrdinal,GlobalOrdinal,Node>        MultiVector;
 typedef Teuchos::ArrayRCP<Scalar >                                         OneDVector;
 typedef Teuchos::ArrayRCP<const Scalar >                                   ConstOneDVector;
 typedef Tpetra::Vector<Scalar,LocalOrdinal,GlobalOrdinal,Node>             Vector;
-typedef Tpetra::CrsMatrix<Scalar, LocalOrdinal, GlobalOrdinal, Node>       Matrix;
+typedef Tpetra::FECrsMatrix<Scalar, LocalOrdinal, GlobalOrdinal, Node>       Matrix;
 typedef Tpetra::Operator<Scalar, LocalOrdinal, GlobalOrdinal, Node>        Operator;
 typedef Belos::MultiVecTraits<Scalar, MultiVector>                         MultiVectorTraits;
 typedef Belos::OperatorTraits<Scalar,MultiVector, Operator>                OperatorTraits;

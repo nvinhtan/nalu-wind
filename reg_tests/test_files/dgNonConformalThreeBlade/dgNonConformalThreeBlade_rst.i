@@ -22,7 +22,7 @@ linear_solvers:
     max_iterations: 50
     kspace: 50
     output_level: 0
-    muelu_xml_file_name: ../../xml/milestone.xml
+    muelu_xml_file_name: /scratch/cbluchi/exawind/source/nalu-wind/reg_tests/xml/milestone.xml
 
 realms:
 
