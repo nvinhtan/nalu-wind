@@ -1377,7 +1377,7 @@ TpetraLinearSystem::finalizeLinearSystem()
                                                optColGids.get(),
                                                optColGids_csz,
                                                1, 
-                                               tpetraComm, node_));
+                                               tpetraComm));
   
   fill_entity_to_col_LID_mapping();
 

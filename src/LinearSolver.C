@@ -87,8 +87,12 @@ void TpetraLinearSolver::setupLinearSolver(
 {
 
   setSystemObjects(matrix,rhs);
-  problem_ = Teuchos::RCP<LinSys::LinearProblem>(new LinSys::LinearProblem(matrix_, sln, rhs_) );
-
+  {
+    //    auto recast_matrix  = rcp(dynamic_cast<Tpetra::CrsMatrix<Scalar, LocalOrdinal, GlobalOrdinal, Node>* > (matrix_.get()));
+    problem_ = Teuchos::RCP<LinSys::LinearProblem>(new LinSys::LinearProblem(matrix_, 
+                                                                             sln, 
+                                                                             rhs_) );
+  }
   if(activateMueLu_) {
     coords_ = coords;
   }
@@ -136,6 +140,7 @@ void TpetraLinearSolver::setMueLu()
       mueluPreconditioner_ = MueLu::CreateTpetraPreconditioner<SC,LO,GO,NO>(Teuchos::RCP<Tpetra::Operator<SC,LO,GO,NO> >(matrix_), xmlFileName, coords_);
     }
     else if (reusePreconditioner_) {
+      //      auto recast_matrix  = dynamic_cast<Tpetra::CrsMatrix<Scalar, LocalOrdinal, GlobalOrdinal, Node>* > (matrix_.get());
       MueLu::ReuseTpetraPreconditioner(matrix_, *mueluPreconditioner_);
     }
     if (config->getSummarizeMueluTimer())
