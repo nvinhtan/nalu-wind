@@ -538,8 +538,8 @@ Realm::initialize()
   compute_l2_scaling();
 
   // Now that the inactive selectors have been processed; we are ready to setup
-  // HYPRE IDs
-  set_hypre_global_id();
+  // contiguous IDs
+  set_cont_global_id();
 
   equationSystems_.initialize();
 
@@ -868,19 +868,19 @@ Realm::setup_adaptivity()
 void
 Realm::setup_nodal_fields()
 {
-#ifdef NALU_USES_HYPRE
-  hypreGlobalId_ = &(metaData_->declare_field<HypreIDFieldType>(
+  //#ifdef NALU_USES_HYPRE
+  contGlobalId_ = &(metaData_->declare_field<HypreIDFieldType>(
                        stk::topology::NODE_RANK, "hypre_global_id"));
-#endif
+  //#endif
   // register global id and rank fields on all parts
   const stk::mesh::PartVector parts = metaData_->get_parts();
   for ( size_t ipart = 0; ipart < parts.size(); ++ipart ) {
     naluGlobalId_ = &(metaData_->declare_field<GlobalIdFieldType>(stk::topology::NODE_RANK, "nalu_global_id"));
     stk::mesh::put_field_on_mesh(*naluGlobalId_, *parts[ipart], nullptr);
 
-#ifdef NALU_USES_HYPRE
-    stk::mesh::put_field_on_mesh(*hypreGlobalId_, *parts[ipart], nullptr);
-#endif
+    //#ifdef NALU_USES_HYPRE
+    stk::mesh::put_field_on_mesh(*contGlobalId_, *parts[ipart], nullptr);
+    //#endif
   }
 
 
@@ -1891,8 +1891,8 @@ Realm::pre_timestep_work()
     if ( hasOverset_ ) {
       initialize_overset();
 
-      // Only need to reset HYPRE IDs when overset inactive rows change
-      set_hypre_global_id();
+      // Only need to reset contiguous GIDs when overset inactive rows change
+      set_cont_global_id();
     }
 
     // Reset the ngp::Mesh instance
@@ -3489,21 +3489,23 @@ Realm::set_global_id()
 }
 
 void
-Realm::set_hypre_global_id()
+Realm::set_cont_global_id()
 {
-#ifdef NALU_USES_HYPRE
-  /* Create a mapping of Nalu Global ID (nodes) to Hypre Global ID.
+  //#ifdef NALU_USES_HYPRE
+  /* Create a mapping of Nalu Global ID (nodes) to contiguous Hypre/Tpetra Global ID.
    *
-   * Background: Hypre requires a contiguous mapping of row IDs for its IJMatrix
+   * Background: Hypre and Tpetra(*) requires a contiguous mapping of row IDs for its IJMatrix
    * and IJVector data structure, i.e., the startID(iproc+1) = endID(iproc) + 1.
    * Therefore, this method first determines the total number of rows in each
    * paritition and then determines the starting and ending IDs for the Hypre
    * matrix and finally assigns the hypre ID for all the nodes on this partition
-   * in the hypreGlobalId_ field.
+   * in the contGlobalId_ field.
+   * (*) Tpetra requires contiguous GID's for efficiency in CrsMap, CrsGraph etc construction
+   * 
    */
 
   // Fill with an invalid value for future error checking
-  stk::mesh::field_fill(std::numeric_limits<HypreIntType>::max(), *hypreGlobalId_);
+  stk::mesh::field_fill(std::numeric_limits<HypreIntType>::max(), *contGlobalId_);
 
   const stk::mesh::Selector s_local = metaData_->locally_owned_part() & !get_inactive_selector();
   const auto& bkts = bulkData_->get_buckets(
@@ -3513,7 +3515,7 @@ Realm::set_hypre_global_id()
   int nprocs = bulkData_->parallel_size();
   int iproc = bulkData_->parallel_rank();
   std::vector<int> nodesPerProc(nprocs);
-  std::vector<stk::mesh::EntityId> hypreOffsets(nprocs+1);
+  std::vector<stk::mesh::EntityId> contOffsets(nprocs+1);
 
   // 1. Determine the number of nodes per partition and determine appropriate
   // offsets on each MPI rank.
@@ -3522,15 +3524,15 @@ Realm::set_hypre_global_id()
   MPI_Allgather(&num_nodes, 1, MPI_INT, nodesPerProc.data(), 1, MPI_INT,
                 bulkData_->parallel());
 
-  hypreOffsets[0] = 0;
+  contOffsets[0] = 0;
   for (int i=1; i <= nprocs; i++)
-    hypreOffsets[i] = hypreOffsets[i-1] + nodesPerProc[i-1];
+    contOffsets[i] = contOffsets[i-1] + nodesPerProc[i-1];
 
   // These are set up for NDOF=1, the actual lower/upper extents will be
-  // finalized in HypreLinearSystem class based on the equation being solved.
-  hypreILower_ = hypreOffsets[iproc];
-  hypreIUpper_ = hypreOffsets[iproc+1];
-  hypreNumNodes_ = hypreOffsets[nprocs];
+  // finalized in Hypre/Tpetra LinearSystem class based on the equation being solved.
+  contILower_ = contOffsets[iproc];
+  contIUpper_ = contOffsets[iproc+1];
+  contNumNodes_ = contOffsets[nprocs];
 
   // 2. Sort the local STK IDs so that we retain a 1-1 mapping as much as possible
   size_t ii=0;
@@ -3546,14 +3548,14 @@ Realm::set_hypre_global_id()
 
   // 3. Store Hypre global IDs for all the nodes so that this can be used to lookup
   // and populate Hypre data structures.
-  HypreIntType nidx = static_cast<HypreIntType>(hypreILower_);
+  HypreIntType nidx = static_cast<HypreIntType>(contILower_);
   for (auto nid: localIDs) {
     auto node = bulkData_->get_entity(
       stk::topology::NODE_RANK, nid);
-    HypreIntType* hids = stk::mesh::field_data(*hypreGlobalId_, node);
+    HypreIntType* hids = stk::mesh::field_data(*contGlobalId_, node);
     *hids = nidx++;
   }
-#endif
+  //#endif
 }
 
 //--------------------------------------------------------------------------

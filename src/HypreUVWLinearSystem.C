@@ -271,7 +271,7 @@ HypreUVWLinearSystem::applyDirichletBCs(
 
     for (size_t in=0; in < b->size(); in++) {
       auto node = (*b)[in];
-      HypreIntType hid = *stk::mesh::field_data(*realm_.hypreGlobalId_, node);
+      HypreIntType hid = *stk::mesh::field_data(*realm_.contGlobalId_, node);
 
       HYPRE_IJMatrixSetValues(mat_, 1, &ncols, &hid, &hid, &diag_value);
       for (int d=0; d<nDim_; d++) {
