@@ -24,8 +24,8 @@
 
 #include <stk_util/util/ParameterList.hpp>
 
-
 #include<LinearSolverTypes.h>
+#include <stk_ngp/NgpFieldManager.hpp>
 
 // standard c++
 #include <map>
@@ -363,6 +363,14 @@ class Realm {
     return *ngpMesh_;
   }
 
+  inline ngp::FieldManager& ngp_field_manager()
+  {
+    if (!ngpFieldMgr_) {
+      ngpFieldMgr_.reset(new ngp::FieldManager(*bulkData_));
+    }
+    return *ngpFieldMgr_;
+  }
+
   // inactive part
   stk::mesh::Selector get_inactive_selector();
 
@@ -660,6 +668,8 @@ class Realm {
 
 protected:
   std::unique_ptr<ngp::Mesh> ngpMesh_;
+
+  std::unique_ptr<ngp::FieldManager> ngpFieldMgr_;
 
 };
 
