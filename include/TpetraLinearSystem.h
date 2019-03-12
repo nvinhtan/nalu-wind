@@ -15,7 +15,7 @@
 
 #include <Kokkos_DefaultNode.hpp>
 #include <Tpetra_Vector.hpp>
-#include <Tpetra_FECrsMatrix.hpp>
+#include <Tpetra_CrsMatrix.hpp>
 
 #include <stk_mesh/base/Types.hpp>
 #include <stk_mesh/base/Entity.hpp>
@@ -64,6 +64,9 @@ public:
     EquationSystem *eqSys,
     LinearSolver * linearSolver);
   ~TpetraLinearSystem();
+
+  // Utility functions
+  GlobalOrdinal get_entity_tpet_id(const stk::mesh::Entity& node);
 
    // Graph/Matrix Construction
   void buildNodeGraph(const stk::mesh::PartVector & parts); // for nodal assembly (e.g., lumped mass and source)
@@ -187,7 +190,7 @@ private:
   std::vector<std::vector<stk::mesh::Entity> > connections_;
   std::vector<GlobalOrdinal> totalGids_;
   std::set<std::pair<int,GlobalOrdinal> > ownersAndGids_;
-  std::vector<int> sharedPids_;
+  std::unique_ptr<int[]> sharedPids_;
 
   Teuchos::RCP<LinSys::Node>   node_;
 
@@ -221,8 +224,15 @@ private:
   MyLIDMapType myLIDs_;
   std::vector<LocalOrdinal> entityToColLID_;
   std::vector<LocalOrdinal> entityToLID_;
+
   LocalOrdinal maxOwnedRowId_; // = num_owned_nodes * numDof_
   LocalOrdinal maxSharedNotOwnedRowId_; // = (num_owned_nodes + num_sharedNotOwned_nodes) * numDof_
+
+  GlobalOrdinal iLower_;
+  GlobalOrdinal iUpper_;
+  size_t        numRows_;
+  GlobalOrdinal maxRowId_;
+
 
   std::vector<int> sortPermutation_;
 };

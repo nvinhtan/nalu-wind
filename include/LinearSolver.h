@@ -16,7 +16,7 @@
 
 #include <Kokkos_DefaultNode.hpp>
 #include <Tpetra_Vector.hpp>
-#include <Tpetra_FECrsMatrix.hpp>
+#include <Tpetra_CrsMatrix.hpp>
 #include <Teuchos_GlobalMPISession.hpp>
 #include <Teuchos_oblackholestream.hpp>
 

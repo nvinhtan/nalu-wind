@@ -20,6 +20,7 @@ char** gl_argv = 0;
 
 int main(int argc, char **argv)
 {
+
     MPI_Init(&argc, &argv);
 
     //NaluEnv will call MPI_Finalize for us.
