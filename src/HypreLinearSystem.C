@@ -67,7 +67,7 @@ HypreLinearSystem::beginLinearSystemConstruction()
 #ifndef HYPRE_BIGINT
   // Make sure that HYPRE is compiled with 64-bit integer support when running
   // O(~1B) linear systems.
-  uint64_t totalRows = (static_cast<uint64_t>(realm_.contNumNodes_) *
+  uint64_t totalRows = (static_cast<uint64_t>(realm_.hypreNumNodes_) *
                         static_cast<uint64_t>(numDof_));
   uint64_t maxHypreSize = static_cast<uint64_t>(std::numeric_limits<HypreIntType>::max());
 
@@ -80,12 +80,12 @@ HypreLinearSystem::beginLinearSystemConstruction()
   const int rank = realm_.bulk_data().parallel_rank();
 
   if (rank == 0) {
-    iLower_ = realm_.contILower_;
+    iLower_ = realm_.hypreILower_;
   } else {
-    iLower_ = realm_.contILower_ * numDof_ ;
+    iLower_ = realm_.hypreILower_ * numDof_ ;
   }
 
-  iUpper_ = realm_.contIUpper_  * numDof_ - 1;
+  iUpper_ = realm_.hypreIUpper_  * numDof_ - 1;
   // For now set column indices the same as row indices
   jLower_ = iLower_;
   jUpper_ = iUpper_;
@@ -93,12 +93,12 @@ HypreLinearSystem::beginLinearSystemConstruction()
   // The total number of rows handled by this MPI rank for Hypre
   numRows_ = (iUpper_ - iLower_ + 1);
   // Total number of global rows in the system
-  maxRowID_ = realm_.contNumNodes_ * numDof_ - 1;
+  maxRowID_ = realm_.hypreNumNodes_ * numDof_ - 1;
 
 #if 0
   if (numDof_ > 0)
     std::cerr << rank << "\t" << numDof_ << "\t"
-              << realm_.contILower_ << "\t" << realm_.contIUpper_ << "\t"
+              << realm_.hypreILower_ << "\t" << realm_.hypreIUpper_ << "\t"
                 << iLower_ << "\t" << iUpper_ << "\t"
                 << numRows_ << "\t" << maxRowID_ << std::endl;
 #endif
@@ -112,7 +112,7 @@ HypreLinearSystem::beginLinearSystemConstruction()
     rowStatus_[i] = RT_NORMAL;
 
   auto& bulk = realm_.bulk_data();
-  std::vector<const stk::mesh::FieldBase*> fVec{realm_.contGlobalId_};
+  std::vector<const stk::mesh::FieldBase*> fVec{realm_.hypreGlobalId_};
 
   stk::mesh::copy_owned_to_shared(bulk, fVec);
   stk::mesh::communicate_field_data(bulk.aura_ghosting(), fVec);
@@ -129,9 +129,9 @@ HypreLinearSystem::beginLinearSystemConstruction()
 
   if (realm_.periodicManager_ != nullptr &&
       realm_.periodicManager_->periodicGhosting_ != nullptr) {
-    realm_.periodicManager_->parallel_communicate_field(realm_.contGlobalId_);
+    realm_.periodicManager_->parallel_communicate_field(realm_.hypreGlobalId_);
     realm_.periodicManager_->periodic_parallel_communicate_field(
-      realm_.contGlobalId_);
+      realm_.hypreGlobalId_);
   }
 }
 
@@ -198,7 +198,7 @@ HypreLinearSystem::buildOversetNodeGraph(
   // rows during assembly process
   for(auto* oinfo: realm_.oversetManager_->oversetInfoVec_) {
     auto node = oinfo->orphanNode_;
-    HypreIntType hid = *stk::mesh::field_data(*realm_.contGlobalId_, node);
+    HypreIntType hid = *stk::mesh::field_data(*realm_.hypreGlobalId_, node);
     skippedRows_.insert(hid * numDof_);
   }
 }
@@ -221,7 +221,7 @@ HypreLinearSystem::buildDirichletNodeGraph(
   for (auto b: bkts) {
     for (size_t in=0; in < b->size(); in++) {
       auto node = (*b)[in];
-      HypreIntType hid = *stk::mesh::field_data(*realm_.contGlobalId_, node);
+      HypreIntType hid = *stk::mesh::field_data(*realm_.hypreGlobalId_, node);
       skippedRows_.insert(hid * numDof_);
     }
   }
@@ -508,7 +508,7 @@ HypreLinearSystem::applyDirichletBCs(
 
     for (size_t in=0; in < b->size(); in++) {
       auto node = (*b)[in];
-      HypreIntType hid = *stk::mesh::field_data(*realm_.contGlobalId_, node);
+      HypreIntType hid = *stk::mesh::field_data(*realm_.hypreGlobalId_, node);
 
       for (size_t d=0; d<numDof_; d++) {
         HypreIntType lid = hid * numDof_ + d;
@@ -532,7 +532,7 @@ HypreLinearSystem::get_entity_hypre_id(const stk::mesh::Entity& node)
   if (!bulk.is_valid(node))
     throw std::runtime_error("BAD STK NODE");
 #endif
-  HypreIntType hid = *stk::mesh::field_data(*realm_.contGlobalId_, mnode);
+  HypreIntType hid = *stk::mesh::field_data(*realm_.hypreGlobalId_, mnode);
 
 #ifndef NDEBUG
   HypreIntType chk = ((hid+1) * numDof_ - 1);

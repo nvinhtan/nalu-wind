@@ -24,6 +24,9 @@
 
 #include <stk_util/util/ParameterList.hpp>
 
+
+#include<LinearSolverTypes.h>
+
 // standard c++
 #include <map>
 #include <string>
@@ -262,13 +265,14 @@ class Realm {
   virtual void initial_work();
   
   void set_global_id();
+  void set_tpet_global_id();
 
   /** Initialize the contiguous global row IDs
    *
-   *  \sa Realm::contGlobalId_
+   *  \sa Realm::hypreGlobalId_
    */
-  void set_cont_global_id();
- 
+  void set_hypre_global_id();
+
   /// check job for fitting in memory
   void check_job(bool get_node_count);
 
@@ -618,7 +622,8 @@ class Realm {
    *  must be adjusted accordingly to account for multiple degrees of freedom on
    *  a particular node. This is performed in sierra::nalu::<Hypre/Tpetra>LinearSystem.
    */
-  stk::mesh::EntityId contILower_;
+  stk::mesh::EntityId hypreILower_;
+  stk::mesh::EntityId tpetILower_;
 
   /** The ending index (global) of the contiguous HYPRE/Tpetra linear system in this MPI rank
    *
@@ -626,22 +631,28 @@ class Realm {
    *  must be adjusted accordingly to account for multiple degrees of freedom on
    *  a particular node. This is performed in sierra::nalu::<Hypre/Tpetra>LinearSystem.
    */
-  stk::mesh::EntityId contIUpper_;
+  stk::mesh::EntityId hypreIUpper_;
+  stk::mesh::EntityId tpetIUpper_;
 
   /** The total number of nodes in the linear system
    *
    *  Note that this is not an MPI rank local quantity
    */
-  long  contNumNodes_;
+  long  hypreNumNodes_;
+  long  tpetNumNodes_;
 
   /** Global Row IDs for the contiguous HYPRE/Tpetra linear system
    *
    *  The contiguous IDs are different from STK IDs and Realm::naluGlobalId_ because
-   *  HYPRE/Tpetra expects contiguous IDs for matrix rows and further requires that the
+   *  HYPRE expects contiguous IDs for matrix rows and further requires that the
    *  IDs be ordered across MPI ranks; i.e., startIdx (MPI_rank + 1) =
    *  endIdx(MPI_rank) + 1.
    */
-  HypreIDFieldType* contGlobalId_{nullptr};
+  HypreIDFieldType* hypreGlobalId_{nullptr};
+
+  typedef sierra::nalu::LinSys::GlobalOrdinal GlobalOrdinal;
+  typedef stk::mesh::Field<GlobalOrdinal> TpetraIDFieldType;
+  TpetraIDFieldType * tpetGlobalId_{nullptr};
 
   /** Flag indicating whether Hypre solver is being used for any of the equation
    * systems.
