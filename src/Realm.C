@@ -3567,7 +3567,6 @@ Realm::set_tpet_global_id()
   // already do most of the work for this when we compute
   // ownedRowsMap_.
 
-
   /* Create a mapping of Nalu Global ID (nodes) to contiguous Tpetra Global ID.
    *
    * Background: For efficiency, TpetraLinearSystem now requires contiguous ranges of GlobalOrdinals. 
