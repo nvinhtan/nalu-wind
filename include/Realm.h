@@ -265,7 +265,6 @@ class Realm {
   virtual void initial_work();
   
   void set_global_id();
-  void set_tpet_global_id();
 
   /** Initialize the contiguous global row IDs
    *
@@ -650,8 +649,6 @@ class Realm {
    */
   HypreIDFieldType* hypreGlobalId_{nullptr};
 
-  typedef sierra::nalu::LinSys::GlobalOrdinal GlobalOrdinal;
-  typedef stk::mesh::Field<GlobalOrdinal> TpetraIDFieldType;
   TpetraIDFieldType * tpetGlobalId_{nullptr};
 
   /** Flag indicating whether Hypre solver is being used for any of the equation

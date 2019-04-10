@@ -23,6 +23,7 @@ namespace nalu{
 // define scalar field typedef
 typedef stk::mesh::Field<double>  ScalarFieldType;
 typedef stk::mesh::Field<stk::mesh::EntityId> GlobalIdFieldType;
+
 typedef stk::mesh::Field<int>  ScalarIntFieldType;
 typedef ngp::Field<double>  NGPDoubleFieldType;
 typedef ngp::Field<stk::mesh::EntityId> NGPGlobalIdFieldType;
@@ -47,6 +48,9 @@ typedef int HypreIntType;
 #endif
 
 typedef stk::mesh::Field<HypreIntType> HypreIDFieldType;
+
+typedef long GlobalOrdinal;
+typedef stk::mesh::Field<GlobalOrdinal> TpetraIDFieldType;
 
 } // namespace nalu
 } // namespace Sierra

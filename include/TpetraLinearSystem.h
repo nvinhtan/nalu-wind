@@ -24,6 +24,7 @@
 #include <vector>
 #include <string>
 #include <unordered_map>
+#include <unistd.h>
 
 namespace stk {
 class CommNeighbors;
@@ -189,14 +190,14 @@ private:
   uint ownedAndSharedNodes_csz_;
   std::vector<std::vector<stk::mesh::Entity> > connections_;
   std::vector<GlobalOrdinal> totalGids_;
-  std::set<std::pair<int,GlobalOrdinal> > ownersAndGids_;
+  std::set<std::pair<int,GlobalOrdinal> > ownersAndTpetGids_; 
   std::unique_ptr<int[]> sharedPids_;
 
   Teuchos::RCP<LinSys::Node>   node_;
 
   // all rows, otherwise known as col map
   Teuchos::RCP<LinSys::Map>    totalColsMap_;
-  Teuchos::RCP<LinSys::Map>    optColsMap_;
+  // Teuchos::RCP<LinSys::Map>    optColsMap_;
 
   // Map of rows my proc owns (locally owned)
   Teuchos::RCP<LinSys::Map>    ownedRowsMap_;
@@ -228,10 +229,10 @@ private:
   LocalOrdinal maxOwnedRowId_; // = num_owned_nodes * numDof_
   LocalOrdinal maxSharedNotOwnedRowId_; // = (num_owned_nodes + num_sharedNotOwned_nodes) * numDof_
 
-  GlobalOrdinal iLower_;
-  GlobalOrdinal iUpper_;
-  size_t        numRows_;
-  GlobalOrdinal maxRowId_;
+  GlobalOrdinal iLower_; // lowest row GID for this owned map
+  GlobalOrdinal iUpper_; // higest row GID for this owned map
+  size_t        numOwnedRows_;
+  GlobalOrdinal maxGlobalRowId_;
 
 
   std::vector<int> sortPermutation_;

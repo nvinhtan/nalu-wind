@@ -540,7 +540,6 @@ Realm::initialize()
   // Now that the inactive selectors have been processed; we are ready to setup
   // contiguous IDs
   set_hypre_global_id();
-  set_tpet_global_id();
 
   equationSystems_.initialize();
 
@@ -1897,7 +1896,6 @@ Realm::pre_timestep_work()
 
       // Only need to reset contiguous GIDs when overset inactive rows change
       set_hypre_global_id();
-      set_tpet_global_id();
     }
 
     // Reset the ngp::Mesh instance
@@ -3532,7 +3530,7 @@ Realm::set_hypre_global_id()
     hypreOffsets[i] = hypreOffsets[i-1] + nodesPerProc[i-1];
 
   // These are set up for NDOF=1, the actual lower/upper extents will be
-  // finalized in Hypre/Tpetra LinearSystem class based on the equation being solved.
+  // finalized in Hypre LinearSystem class based on the equation being solved.
   hypreILower_ = hypreOffsets[iproc];
   hypreIUpper_ = hypreOffsets[iproc+1];
   hypreNumNodes_ = hypreOffsets[nprocs];
@@ -3560,78 +3558,7 @@ Realm::set_hypre_global_id()
   }
 #endif
 }
-void
-Realm::set_tpet_global_id()
-{
-  // FIXME (13 Mar 2019) Actually, we don't need to do this work.  We
-  // already do most of the work for this when we compute
-  // ownedRowsMap_.
 
-  /* Create a mapping of Nalu Global ID (nodes) to contiguous Tpetra Global ID.
-   *
-   * Background: For efficiency, TpetraLinearSystem now requires contiguous ranges of GlobalOrdinals. 
-   */
-
-  // Fill with an invalid value for future error checking
-  stk::mesh::field_fill(std::numeric_limits<sierra::nalu::LinSys::GlobalOrdinal>::max(), *tpetGlobalId_);
-
-  const stk::mesh::Selector s_local = metaData_->locally_owned_part() & !get_inactive_selector();
-  const auto& bkts = bulkData_->get_buckets(
-    stk::topology::NODE_RANK, s_local);
-
-  size_t num_nodes = 0;
-  int nprocs = bulkData_->parallel_size();
-  int iproc = bulkData_->parallel_rank();
-  std::vector<int> nodesPerProc(nprocs);
-  std::vector<sierra::nalu::LinSys::GlobalOrdinal> tpetOffsets(nprocs+1);
-
-  // 1. Determine the number of nodes per partition and determine appropriate
-  // offsets on each MPI rank.
-  //
-  // FIXME (13 Mar 2019) This does not include the overset reduction of rows.
-  for (auto b: bkts) num_nodes += b->size();
-
-  // FIXME (13 Mar 2019) In order to compute tpetILower_ and
-  // tpetraIUpper_ more efficiently, you could just create a temporary
-  // contiguous nonuniform Tpetra::Map with num_nodes degrees of
-  // freedom per process.  tpetraILower_ would be my process' min GID
-  // and tpetraIUpper_ would be my process' max GID.
-
-  MPI_Allgather(&num_nodes, 1, MPI_INT, nodesPerProc.data(), 1, MPI_INT,
-                bulkData_->parallel());
-
-  tpetOffsets[0] = 0;
-  for (int i=1; i <= nprocs; i++)
-    tpetOffsets[i] = tpetOffsets[i-1] + nodesPerProc[i-1];
-
-  // These are set up for NDOF=1, the actual lower/upper extents will be
-  // finalized in Hypre/Tpetra LinearSystem class based on the equation being solved.
-  tpetILower_   = tpetOffsets[iproc];
-  tpetIUpper_   = tpetOffsets[iproc+1];
-  tpetNumNodes_ = tpetOffsets[nprocs];
-
-  // 2. Sort the local STK IDs so that we retain a 1-1 mapping as much as possible
-  size_t ii=0;
-  std::vector<stk::mesh::EntityId> localIDs(num_nodes);
-  for (auto b: bkts) {
-    for (size_t in=0; in < b->size(); in++) {
-      auto node = (*b)[in];
-      auto nid = bulkData_->identifier(node);
-      localIDs[ii++] = nid;
-    }
-  }
-  std::sort(localIDs.begin(), localIDs.end());
-
-  // 3. Store contiguous global IDs for all the nodes so that this can be used to lookup
-  // and populate Hypre data structures.
-  auto nidx = static_cast<sierra::nalu::LinSys::GlobalOrdinal>(tpetILower_);
-  for (auto nid: localIDs) {
-    auto node = bulkData_->get_entity(
-      stk::topology::NODE_RANK, nid);
-    sierra::nalu::LinSys::GlobalOrdinal* hids = stk::mesh::field_data(*tpetGlobalId_, node);
-    *hids = nidx++;
-  }
-}
 
 //--------------------------------------------------------------------------
 //-------- populate_boundary_data ------------------------------------------
