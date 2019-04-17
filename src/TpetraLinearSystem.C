@@ -406,7 +406,6 @@ TpetraLinearSystem::beginLinearSystemConstruction()
       sharedNotOwnedGids_csz++;
     }
   }
-
   sharedNotOwnedRowsMap_ = Teuchos::rcp(new LinSys::Map(Teuchos::OrdinalTraits<Tpetra::global_size_t>::invalid(), 
                                                         sharedNotOwnedGids.get(),
                                                         sharedNotOwnedGids_csz,
