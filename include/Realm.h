@@ -457,6 +457,8 @@ class Realm {
   double timerPromoteMesh_;
   double timerSortExposedFace_;
 
+  double timerHypreGlobalID_;
+
   NonConformalManager *nonConformalManager_;
   OversetManager *oversetManager_;
   bool hasNonConformal_;

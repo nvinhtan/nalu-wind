@@ -224,6 +224,7 @@ namespace nalu{
     timerSkinMesh_(0.0),
     timerPromoteMesh_(0.0),
     timerSortExposedFace_(0.0),
+    timerHypreGlobalID_(0.0),
     nonConformalManager_(NULL),
     oversetManager_(NULL),
     hasNonConformal_(false),
@@ -539,9 +540,13 @@ Realm::initialize()
 
   // Now that the inactive selectors have been processed; we are ready to setup
   // contiguous IDs
-  set_hypre_global_id();
 
-  equationSystems_.initialize();
+  const double hgid_time = NaluEnv::self().nalu_time();
+  set_hypre_global_id();
+  const double hgid_end_time = NaluEnv::self().nalu_time();
+  timerHypreGlobalID_ += (hgid_end_time - hgid_time);
+  
+    equationSystems_.initialize();
 
   // check job run size after mesh creation, linear system initialization
   check_job(false);
@@ -1721,6 +1726,7 @@ Realm::pre_timestep_work()
     static stk::diag::Timer timerCreateEdgesLocal_("CreateEdgesAfterAdapt", timerUniformRefine_);
     static stk::diag::Timer timerDeleteEdgesLocal_("DeleteEdgesBeforeAdapt", timerUniformRefine_);
     static stk::diag::Timer timerReInitLinSys_("ReInitLinSys", timerUniformRefine_);
+   
 
     stk::diag::TimeBlock tbTimerUR_(timerUniformRefine_);
   
@@ -3711,9 +3717,18 @@ Realm::dump_simulation_time()
 
   // equation system time
   equationSystems_.dump_eq_time();
-
   const int nprocs = NaluEnv::self().parallel_size();
 
+  // hypre gid setup time:
+ double timerHypreGlobalID_;
+ double hgmax=0, hgmin=0, hgsum=0;
+ stk::all_reduce_min(NaluEnv::self().parallel_comm(), &timerHypreGlobalID_, &hgmin, 1);
+ stk::all_reduce_max(NaluEnv::self().parallel_comm(), &timerHypreGlobalID_, &hgmax, 1);
+ stk::all_reduce_sum(NaluEnv::self().parallel_comm(), &timerHypreGlobalID_, &hgsum, 1);
+
+
+ NaluEnv::self().naluOutputP0() << "Timing for HypreGlobalIDSetup: " << std::endl;
+ NaluEnv::self().naluOutputP0() << "HypreGlobalIDsetup: Avg: "<< hgsum/nprocs<<"  Min: "<<hgmin<<"    Max: "<<hgmax<<std::endl;
   // common
   const unsigned ntimers = 6;
   double total_time[ntimers] = {timerCreateMesh_, timerOutputFields_, timerInitializeEqs_, 

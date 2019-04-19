@@ -136,7 +136,7 @@ public:
   }
 
 
-  int getDofStatus(stk::mesh::Entity node);
+  int getDofStatus(stk::mesh::Entity& node) const;
 
   Teuchos::RCP<LinSys::Graph>  getOwnedGraph() { return ownedGraph_; }
   Teuchos::RCP<LinSys::Matrix> getOwnedMatrix() { return ownedMatrix_; }
@@ -180,8 +180,8 @@ private:
   void copy_stk_to_tpetra(stk::mesh::FieldBase * stkField,
     const Teuchos::RCP<LinSys::MultiVector> tpetraVector);
 
-  int insert_connection(stk::mesh::Entity a, stk::mesh::Entity b);
-  void addConnections(const stk::mesh::Entity* entities,const size_t&);
+  int insert_connection(const stk::mesh::Entity &a, const stk::mesh::Entity &b);
+  void addConnections(const stk::mesh::Entity* entities, const size_t&);
   void expand_unordered_map(unsigned newCapacityNeeded);
   /* void checkForNaN(bool useOwned); */
   /* bool checkForZeroRow(bool useOwned, bool doThrow, bool doPrint=false); */
@@ -190,6 +190,10 @@ private:
   uint ownedAndSharedNodes_csz_;
   std::vector<std::vector<stk::mesh::Entity> > connections_;
   std::vector<GlobalOrdinal> totalGids_;
+
+  // cbl 18-apr-19 since we can get all possible communications proc id's, (sharedPids_), the sorting by pid
+  // provided by this set can be achieved much cheaper by View<GlobalOrdinal>[number_of_neighbor_procs], and
+  // then inserting into the correct location. STK should never (?!!?) report more than one owner for any GID. 
   std::set<std::pair<int,GlobalOrdinal> > ownersAndTpetGids_; 
   std::unique_ptr<int[]> sharedPids_;
 
@@ -236,6 +240,8 @@ private:
 
 
   std::vector<int> sortPermutation_;
+
+  int myRank_; // this procs rank
 };
 
 template<typename T1, typename T2>
@@ -257,7 +263,7 @@ void copy_kokkos_unordered_map(const Kokkos::UnorderedMap<T1,T2>& src,
   ThrowRequire(fail_count == 0);
 }
 
-int getDofStatus_impl(stk::mesh::Entity node, const Realm& realm);
+int getDofStatus_impl(stk::mesh::Entity& node, const Realm& realm);
 
 } // namespace nalu
 } // namespace Sierra
