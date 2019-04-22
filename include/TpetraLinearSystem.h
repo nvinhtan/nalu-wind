@@ -136,7 +136,7 @@ public:
   }
 
 
-  int getDofStatus(stk::mesh::Entity& node) const;
+  int getDofStatus(stk::mesh::Entity node) const;
 
   Teuchos::RCP<LinSys::Graph>  getOwnedGraph() { return ownedGraph_; }
   Teuchos::RCP<LinSys::Matrix> getOwnedMatrix() { return ownedMatrix_; }
@@ -263,7 +263,7 @@ void copy_kokkos_unordered_map(const Kokkos::UnorderedMap<T1,T2>& src,
   ThrowRequire(fail_count == 0);
 }
 
-int getDofStatus_impl(stk::mesh::Entity& node, const Realm& realm);
+int getDofStatus_impl(stk::mesh::Entity node, const Realm& realm);
 
 } // namespace nalu
 } // namespace Sierra

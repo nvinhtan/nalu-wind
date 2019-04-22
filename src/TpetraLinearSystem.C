@@ -155,7 +155,7 @@ struct CompareEntityById
 // FIXME - note that the DOFStatus enum can be Or'd together if need be to
 //   distinguish ever more complicated situations, for example, a DOF that
 //   is both owned and ghosted: OwnedDOF | GhostedDOF
-int TpetraLinearSystem::getDofStatus(stk::mesh::Entity& node) const
+int TpetraLinearSystem::getDofStatus(stk::mesh::Entity node) const
 {
     return getDofStatus_impl(node, realm_);
 }
@@ -2278,7 +2278,7 @@ TpetraLinearSystem::copy_tpetra_to_stk(
   }
 }
 
-int getDofStatus_impl(stk::mesh::Entity& node, const Realm& realm)
+int getDofStatus_impl(stk::mesh::Entity node, const Realm& realm)
 {
   const stk::mesh::BulkData & bulkData = realm.bulk_data();
 
