@@ -170,7 +170,9 @@ TpetraLinearSystem::get_entity_tpet_id(const stk::mesh::Entity& node)
   if (!bulk.is_valid(node))
     throw std::runtime_error("BAD STK NODE");
 #endif
-  return *stk::mesh::field_data(*realm_.tpetGlobalId_, mnode);
+  auto gid = *stk::mesh::field_data(*realm_.tpetGlobalId_, mnode);
+  assert(gid!=0);
+  return gid;
 }
 
 stk::mesh::Entity get_entity_master(const stk::mesh::BulkData& bulk,
@@ -254,7 +256,7 @@ TpetraLinearSystem::beginLinearSystemConstruction()
   // then move to using Kokkos team parallelism later by changing the
   // inside of their "parallel_reduce_bucket_loop" construct.
   //
-  // cbl 16 Apr 2019: This loop should ALSO be used to fill the owned and shared-not-owned node lists
+  // cbl 16 Apr 2019: This loop should ****ALSO**** be used to fill the owned and shared-not-owned node lists
   // while counting. Initialize the size of both to bulk.get_size_of_entity_index_space(), without value initialization 
   // (unique_ptr or  Kokkos::View<Entity,MemSpace> owned (Kokkos::ViewAllocateWithoutInitializing("colInds"),
   // bulk.get_size_of_entity_index_space()); 
@@ -391,11 +393,13 @@ TpetraLinearSystem::beginLinearSystemConstruction()
     const auto naluId = *stk::mesh::field_data(*realm_.naluGlobalId_, entity);
     auto mentity = get_entity_master(bulkData, entity, naluId);
     auto tpetId_master = *stk::mesh::field_data(*realm_.tpetGlobalId_, mentity);
+    assert(tpetId_master != 0);
     myLIDs_[naluId] = numDof_ * localId++; 
     int owner = bulkData.parallel_owner_rank(entity);
     for(unsigned idof=0; idof < numDof_; ++ idof) {
       const GlobalOrdinal tgid =  tpetId_master+idof;
       if(tgid >= iLower_ && tgid < iUpper_ ) continue; // master is on this rank, skip
+      if(owner == myRank_) continue;
       sharedPids_[sharedNotOwnedGids_csz] = owner;
       sharedNotOwnedGids[sharedNotOwnedGids_csz]=tgid;
       sharedNotOwnedGids_csz++;
@@ -417,6 +421,8 @@ TpetraLinearSystem::beginLinearSystemConstruction()
   fill_entity_to_row_LID_mapping();
 
   // fill the shared not owned part of ownedAndSharedNodes_
+  // Note: CBL shared_not_owned_nodes should simply be an offset (ownednsharednodeloc) into a larger array that 
+  // starts with ownedAndShareNodes. Hence no need for data movement. 
   std::copy(shared_not_owned_nodes.get(), 
             shared_not_owned_nodes.get()+shared_not_owned_nodes_csz,
             ownedAndSharedNodes_.get()+ownednsharednodeloc);
@@ -743,6 +749,7 @@ TpetraLinearSystem::copy_stk_to_tpetra(
         continue;
 
       auto nodeGID = *stk::mesh::field_data(*realm_.tpetGlobalId_, node); 
+      assert(nodeGID != 0);
       for(int d=0; d < fieldSize; ++d)
       {
         const size_t stkIndex = k*fieldSize + d;
@@ -917,6 +924,7 @@ TpetraLinearSystem::compute_graph_row_lengths(const std::unique_ptr<stk::mesh::E
     for(size_t j=0; j<numColEntities; ++j) {
         stk::mesh::Entity colEntity = colEntities[j];
         colEntityTpetIds[j] = *stk::mesh::field_data(*realm_.tpetGlobalId_, colEntity);
+        assert( colEntityTpetIds[j] != 0);
         colEntitySTKIds[j]  = *stk::mesh::field_data(*realm_.naluGlobalId_, colEntity);
         const auto & cESI = colEntitySTKIds[j];
         colOwners[j] = bulk.parallel_owner_rank(get_entity_master(bulk, colEntity, cESI));
@@ -936,6 +944,7 @@ TpetraLinearSystem::compute_graph_row_lengths(const std::unique_ptr<stk::mesh::E
                   entity_a_owned, numColEntities);
 
     GlobalOrdinal tpetGid_a = *stk::mesh::field_data(*realm_.tpetGlobalId_, entity_a);
+    assert(tpetGid_a != 0);
     const bool entity_a_shared = entity_a_status & DS_SharedNotOwnedDOF;
 
     if (entity_a_shared) {
@@ -958,7 +967,7 @@ TpetraLinearSystem::compute_graph_row_lengths(const std::unique_ptr<stk::mesh::E
         LocalOrdinal lid_b = entityToLID_[entity_b.local_offset()];
         add_to_length(deviceLocallyOwnedRowLengths, deviceSharedNotOwnedRowLengths, numDof_, lid_b, maxOwnedRowId_, entity_b_owned, 1);
         GlobalOrdinal tpetGid_b = *stk::mesh::field_data(*realm_.tpetGlobalId_, entity_b);
-
+        assert(tpetGid_b != 0);
         const bool entity_b_shared = entity_b_status & DS_SharedNotOwnedDOF;
         if (entity_b_shared) {
           const int ceao = entity_a_owner;
@@ -1114,8 +1123,8 @@ void
 TpetraLinearSystem::fill_entity_to_col_LID_mapping()
 {
 
-  // cbl: This should loop over the owned_and_shared_node list, not the whole stk mesh, and entityToLID_ should
-  // be sized the same as owned_and_shared_nodes.  Even if workign around indexinb by 
+  // cbl: This should loop over the owned_and_shared_node list, not the whole stk mesh,
+  //  And (?) entityToLID_ should be sized the same as owned_and_shared_nodes.  Even if working around indexing by 
   // node.local_offset() into entityToColLID_ turns to be too expensive, the loop should still be over owned_and_shared_nodes, not the whole stk mesh. 
     const stk::mesh::BulkData& bulk = realm_.bulk_data();
     entityToColLID_.assign(bulk.get_size_of_entity_index_space(), Teuchos::OrdinalTraits<LocalOrdinal>::invalid());
