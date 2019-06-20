@@ -387,9 +387,7 @@ TpetraLinearSystem::beginLinearSystemConstruction()
     const auto naluId = *stk::mesh::field_data(*realm_.naluGlobalId_, entity);
     auto mentity = get_entity_master(bulkData, entity, naluId);
     auto tpetId_master = *stk::mesh::field_data(*realm_.tpetGlobalId_, mentity);
-
     assert(tpetId_master != std::numeric_limits<GlobalOrdinal>::max());
-
     assert(tpetId_master != 0);
     myLIDs_[naluId] = numDof_ * localId++; 
     int owner = bulkData.parallel_owner_rank(entity);
@@ -895,7 +893,6 @@ TpetraLinearSystem::compute_graph_row_lengths(const std::unique_ptr<stk::mesh::E
   }
 }
 
-
 void
 TpetraLinearSystem::insert_graph_connections(const std::unique_ptr<stk::mesh::Entity[]>& rowEntities,
                                              uint & rowEntities_csz,
@@ -947,6 +944,37 @@ TpetraLinearSystem::insert_graph_connections(const std::unique_ptr<stk::mesh::En
       }
     }
   }
+}
+
+
+void insert_communicated_col_indices(const std::vector<int>& neighborProcs,
+                                     stk::CommNeighbors& commNeighbors,
+                                     unsigned numDof,
+                                     LocalGraphArrays& ownedGraph,
+                                     const LinSys::Map& rowMap,
+                                     const LinSys::Map& colMap)
+{
+    std::vector<LocalOrdinal> colLids;
+    for(int p : neighborProcs) {
+        stk::CommBufferV& rbuf = commNeighbors.recv_buffer(p);
+        while(rbuf.size_in_bytes() > 0) {
+            GlobalOrdinal tpetGID=0;
+            rbuf.unpack(tpetGID);
+            unsigned len = 0;
+            rbuf.unpack(len);
+            unsigned numCols = len/2;
+            colLids.resize(numCols);
+            LocalOrdinal rowLid = rowMap.getLocalElement(tpetGID);
+            for(unsigned i=0; i<numCols; ++i) {
+                GlobalOrdinal tpetColGid = 0;
+                rbuf.unpack(tpetColGid);
+                int owner = 0;
+                rbuf.unpack(owner);
+                colLids[i] = colMap.getLocalElement(tpetColGid);
+            }
+            ownedGraph.insertIndices(rowLid++,numCols,colLids.data(), numDof);
+        }
+    }
 }
 
 void
@@ -1026,7 +1054,7 @@ void TpetraLinearSystem::storeOwnersForShared()
   }
 }
 
-void fill_owned_and_shared_then_nonowned_ordered_by_proc(std::unique_ptr<LinSys::GlobalOrdinal[]>& totalGids,
+void fill_owned_and_shared_then_nonowned_ordered_by_proc(std::unique_ptr<GlobalOrdinal[]>& totalGids,
                                                          unsigned &totalGids_csz,
                                                          std::unique_ptr<int[]>& srcPids,
                                                          unsigned & srcPids_csz,
@@ -1128,7 +1156,6 @@ void remove_invalid_indices(LocalGraphArrays& csg, ViewType& rowLengths)
     LocalGraphArrays::compute_row_pointers(csg.rowPointers, rowLengths);
   }
 }
-
 
 void verify_no_empty_connections(const std::vector<stk::mesh::Entity>&  /* rowEntities */,
         const std::vector<std::vector<stk::mesh::Entity> >& connections)
