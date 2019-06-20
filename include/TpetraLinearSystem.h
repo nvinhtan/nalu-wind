@@ -57,6 +57,9 @@ public:
     LinearSolver * linearSolver);
   ~TpetraLinearSystem();
 
+ // Utility functions
+  GlobalOrdinal get_entity_tpet_id(const stk::mesh::Entity& node);
+
    // Graph/Matrix Construction
   void buildNodeGraph(const stk::mesh::PartVector & parts); // for nodal assembly (e.g., lumped mass and source)
   void buildFaceToNodeGraph(const stk::mesh::PartVector & parts); // face->node assembly
@@ -137,7 +140,7 @@ public:
   }
 
 
-  int getDofStatus(stk::mesh::Entity node);
+  int getDofStatus(stk::mesh::Entity node) const;
 
   int getRowLID(stk::mesh::Entity node) { return entityToLID_[node.local_offset()]; }
   int getColLID(stk::mesh::Entity node) { return entityToColLID_[node.local_offset()]; }
@@ -200,19 +203,23 @@ private:
   void beginLinearSystemConstruction();
 
   void checkError( const int /* err_code */, const char * /* msg */) {}
+  //  bool checkForZeroRow(bool useOwned, bool doThrow, bool doPrint);
 
-  void compute_send_lengths(const std::vector<stk::mesh::Entity>& rowEntities,
+  void compute_send_lengths(const std::unique_ptr<stk::mesh::Entity[]> & rowEntities, 
+                            uint & rowEntities_csz,
          const std::vector<std::vector<stk::mesh::Entity> >& connections,
                             const std::vector<int>& neighborProcs,
                             stk::CommNeighbors& commNeighbors);
 
-  void compute_graph_row_lengths(const std::vector<stk::mesh::Entity>& rowEntities,
+  void compute_graph_row_lengths(const std::unique_ptr<stk::mesh::Entity[]>& rowEntities,
+                                 uint & rowEntities_csz,
          const std::vector<std::vector<stk::mesh::Entity> >& connections,
                                  LinSys::RowLengths& sharedNotOwnedRowLengths,
                                  LinSys::RowLengths& locallyOwnedRowLengths,
                                  stk::CommNeighbors& commNeighbors);
 
-  void insert_graph_connections(const std::vector<stk::mesh::Entity>& rowEntities,
+  void insert_graph_connections(const std::unique_ptr<stk::mesh::Entity[]>& rowEntities,
+                                uint & rowEntities_csz,
          const std::vector<std::vector<stk::mesh::Entity> >& connections,
                                 LocalGraphArrays& locallyOwnedGraph,
                                 LocalGraphArrays& sharedNotOwnedGraph);
@@ -229,23 +236,21 @@ private:
   void copy_stk_to_tpetra(stk::mesh::FieldBase * stkField,
     const Teuchos::RCP<LinSys::MultiVector> tpetraVector);
 
-  int insert_connection(stk::mesh::Entity a, stk::mesh::Entity b);
-  void addConnections(const stk::mesh::Entity* entities,const size_t&);
+  int insert_connection(const stk::mesh::Entity &a, const stk::mesh::Entity &b);
+  void addConnections(const stk::mesh::Entity* entities, const size_t&);
   void expand_unordered_map(unsigned newCapacityNeeded);
-  void checkForNaN(bool useOwned);
-  bool checkForZeroRow(bool useOwned, bool doThrow, bool doPrint=false);
 
-  std::vector<stk::mesh::Entity> ownedAndSharedNodes_;
+  std::unique_ptr<stk::mesh::Entity[]> ownedAndSharedNodes_;
+  uint ownedAndSharedNodes_csz_;
   std::vector<std::vector<stk::mesh::Entity> > connections_;
   std::vector<GlobalOrdinal> totalGids_;
-  std::set<std::pair<int,GlobalOrdinal> > ownersAndGids_;
-  std::vector<int> sharedPids_;
+  std::set<std::pair<int,GlobalOrdinal> > ownersAndTpetGids_;
+  std::unique_ptr<int[]> sharedPids_;
 
   Teuchos::RCP<LinSys::Node>   node_;
 
   // all rows, otherwise known as col map
   Teuchos::RCP<LinSys::Map>    totalColsMap_;
-  Teuchos::RCP<LinSys::Map>    optColsMap_;
 
   // Map of rows my proc owns (locally owned)
   Teuchos::RCP<LinSys::Map>    ownedRowsMap_;
@@ -275,8 +280,14 @@ private:
   Kokkos::View<LocalOrdinal*,Kokkos::LayoutRight,MemSpace> entityToLID_;
   LocalOrdinal maxOwnedRowId_; // = num_owned_nodes * numDof_
   LocalOrdinal maxSharedNotOwnedRowId_; // = (num_owned_nodes + num_sharedNotOwned_nodes) * numDof_
-
   std::vector<int> sortPermutation_;
+
+  GlobalOrdinal iLower_; // lowest row GID for this owned map
+  GlobalOrdinal iUpper_; // higest row GID for this owned map
+  size_t        numOwnedRows_;
+  GlobalOrdinal maxGlobalRowId_;
+  int myRank_; // this procs rank
+
 };
 
 template<typename T1, typename T2>
