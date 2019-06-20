@@ -627,6 +627,10 @@ class Realm {
 
   bool isFinalOuterIter_{false};
 
+  stk::mesh::EntityId tpetILower_;
+  stk::mesh::EntityId tpetIUpper_;
+  long tpetNumNodes_;
+
   /** The starting index (global) of the HYPRE linear system in this MPI rank
    *
    *  Note that this is actually the offset into the linear system. This index
@@ -657,7 +661,7 @@ class Realm {
    *  endIdx(MPI_rank) + 1.
    */
   HypreIDFieldType* hypreGlobalId_{nullptr};
-
+  TpetraIDFieldType * tpetGlobalId_{nullptr};
   /** Flag indicating whether Hypre solver is being used for any of the equation
    * systems.
    */
