@@ -525,7 +525,7 @@ public:
   virtual ~MomentumABLKernelHex8Mesh() = default;
 
   virtual void fill_mesh_and_init_fields(
-    bool doPerturb = false, bool generateSidesets = false)
+    bool doPerturb = false, bool generateSidesets = false) override
   {
     const double vel[3] = {uh_, 0.0, 0.0};
     const double bcVel[3] = {0.0, 0.0, 0.0};
@@ -565,10 +565,10 @@ class EnthalpyABLKernelHex8Mesh : public MomentumABLKernelHex8Mesh
 /** Test Fixture for the SST Kernels
  *
  */
-class SSTKernelHex8Mesh : public LowMachKernelHex8Mesh
+class KsgsKernelHex8Mesh : public LowMachKernelHex8Mesh
 {
 public:
-  SSTKernelHex8Mesh()
+  KsgsKernelHex8Mesh()
     : LowMachKernelHex8Mesh(),
       tke_(&meta_.declare_field<ScalarFieldType>(
         stk::topology::NODE_RANK, "turbulent_ke")),
@@ -587,8 +587,11 @@ public:
       dwdx_(&meta_.declare_field<VectorFieldType>(
               stk::topology::NODE_RANK, "dwdx"))
   {
+    stk::mesh::put_field_on_mesh(*viscosity_, meta_.universal_part(), 1, nullptr);
     stk::mesh::put_field_on_mesh(*tke_, meta_.universal_part(), 1, nullptr);
     stk::mesh::put_field_on_mesh(*sdr_, meta_.universal_part(), 1, nullptr);
+    stk::mesh::put_field_on_mesh(*minDistance_, meta_.universal_part(), 1, nullptr);
+    stk::mesh::put_field_on_mesh(*dudx_, meta_.universal_part(), spatialDim_*spatialDim_, nullptr);
     stk::mesh::put_field_on_mesh(*tvisc_, meta_.universal_part(), 1, nullptr);
     stk::mesh::put_field_on_mesh(*maxLengthScale_, meta_.universal_part(), 1, nullptr);
     stk::mesh::put_field_on_mesh(*fOneBlend_, meta_.universal_part(), 1, nullptr);
@@ -600,16 +603,20 @@ public:
       *dwdx_, meta_.universal_part(), spatialDim_, nullptr);
   }
 
-  virtual ~SSTKernelHex8Mesh() {}
+  virtual ~KsgsKernelHex8Mesh() = default;
 
   virtual void fill_mesh_and_init_fields(
     bool doPerturb = false, bool generateSidesets = false) override
   {
     LowMachKernelHex8Mesh::fill_mesh_and_init_fields(doPerturb, generateSidesets);
-    stk::mesh::field_fill(0.3, *tvisc_);
-    stk::mesh::field_fill(0.5, *maxLengthScale_);
-    unit_test_kernel_utils::density_test_function(
-      bulk_, *coordinates_, *density_);
+    if (perturb_turbulent_viscosity_and_dual_nodal_volume) {
+       unit_test_kernel_utils::turbulent_viscosity_test_function(bulk_, *coordinates_, *tvisc_);
+      stk::mesh::field_fill(0.2, *dualNodalVolume_);
+    } else {
+       stk::mesh::field_fill(0.3, *tvisc_);
+    }
+    unit_test_kernel_utils::density_test_function(bulk_, *coordinates_, *density_);
+    stk::mesh::field_fill(0.2, *viscosity_);
     unit_test_kernel_utils::tke_test_function(bulk_, *coordinates_, *tke_);
     unit_test_kernel_utils::sdr_test_function(bulk_, *coordinates_, *sdr_);
     unit_test_kernel_utils::sst_f_one_blending_test_function(
