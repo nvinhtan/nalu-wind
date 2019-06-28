@@ -5,10 +5,11 @@
 /*  directory structure                                                   */
 /*------------------------------------------------------------------------*/
 
-#ifndef MOMENTUMBOUSSINESQNODEKERNEL_h
-#define MOMENTUMBOUSSINESQNODEKERNEL_h
+#ifndef ContinuityMassBDFNodeKernel_h
+#define ContinuityMassBDFNodeKernel_h
 
 #include "node_kernels/NodeKernel.h"
+#include "FieldTypeDef.h"
 
 #include "stk_mesh/base/BulkData.hpp"
 #include "stk_ngp/Ngp.hpp"
@@ -16,21 +17,20 @@
 namespace sierra{
 namespace nalu{
 
-class SolutionOptions;
+class Realm;
 
-class MomentumBoussinesqNodeKernel : public NGPNodeKernel<MomentumBoussinesqNodeKernel>
+class ContinuityMassBDFNodeKernel : public NGPNodeKernel<ContinuityMassBDFNodeKernel>
 {
 public:
-  MomentumBoussinesqNodeKernel(
-    const stk::mesh::BulkData&,
-    const std::vector<double>&,
-    const SolutionOptions&);
+
+  ContinuityMassBDFNodeKernel(
+    const stk::mesh::BulkData&);
 
   KOKKOS_FUNCTION
-  MomentumBoussinesqNodeKernel() = default;
+  ContinuityMassBDFNodeKernel() = default;
 
   KOKKOS_FUNCTION
-  virtual ~MomentumBoussinesqNodeKernel() = default;
+  virtual ~ContinuityMassBDFNodeKernel() = default;
 
   virtual void setup(Realm&) override;
 
@@ -41,19 +41,18 @@ public:
     const stk::mesh::FastMeshIndex&) override;
 
 private:
+  ngp::Field<double> densityNm1_;
+  ngp::Field<double> densityN_;
+  ngp::Field<double> densityNp1_;
   ngp::Field<double> dualNodalVolume_;
-  ngp::Field<double> temperature_;
-  const int nDim_;
-  NodeKernelTraits::DblType tRef_;
-  NodeKernelTraits::DblType rhoRef_;
-  NodeKernelTraits::DblType beta_;
 
-  NALU_ALIGNED NodeKernelTraits::DblType forceVector_[NodeKernelTraits::NDimMax];
-
+  unsigned densityNm1ID_ {stk::mesh::InvalidOrdinal};
+  unsigned densityNID_ {stk::mesh::InvalidOrdinal};
+  unsigned densityNp1ID_ {stk::mesh::InvalidOrdinal};
   unsigned dualNodalVolumeID_ {stk::mesh::InvalidOrdinal};
-  unsigned temperatureID_ {stk::mesh::InvalidOrdinal};
 
-  NALU_ALIGNED NodeKernelTraits::DblType gravity_[NodeKernelTraits::NDimMax];
+  double dt_;
+  double gamma1_, gamma2_, gamma3_;
 
 };
 

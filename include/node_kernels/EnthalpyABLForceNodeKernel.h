@@ -5,32 +5,32 @@
 /*  directory structure                                                   */
 /*------------------------------------------------------------------------*/
 
-#ifndef MOMENTUMBOUSSINESQNODEKERNEL_h
-#define MOMENTUMBOUSSINESQNODEKERNEL_h
+#ifndef ENTHLAPYABLFORCENODEKERNEL_H
+#define ENTHLAPYABLFORCENODEKERNEL_H
 
 #include "node_kernels/NodeKernel.h"
+#include "wind_energy/ABLSrcInterp.h"
 
 #include "stk_mesh/base/BulkData.hpp"
 #include "stk_ngp/Ngp.hpp"
 
-namespace sierra{
-namespace nalu{
+namespace sierra {
+namespace nalu {
 
 class SolutionOptions;
 
-class MomentumBoussinesqNodeKernel : public NGPNodeKernel<MomentumBoussinesqNodeKernel>
+class EnthalpyABLForceNodeKernel : public NGPNodeKernel<EnthalpyABLForceNodeKernel>
 {
 public:
-  MomentumBoussinesqNodeKernel(
+  EnthalpyABLForceNodeKernel(
     const stk::mesh::BulkData&,
-    const std::vector<double>&,
     const SolutionOptions&);
 
   KOKKOS_FUNCTION
-  MomentumBoussinesqNodeKernel() = default;
+  EnthalpyABLForceNodeKernel() = default;
 
   KOKKOS_FUNCTION
-  virtual ~MomentumBoussinesqNodeKernel() = default;
+  virtual ~EnthalpyABLForceNodeKernel() = default;
 
   virtual void setup(Realm&) override;
 
@@ -41,23 +41,19 @@ public:
     const stk::mesh::FastMeshIndex&) override;
 
 private:
+  ngp::Field<double> coordinates_;
   ngp::Field<double> dualNodalVolume_;
-  ngp::Field<double> temperature_;
-  const int nDim_;
-  NodeKernelTraits::DblType tRef_;
-  NodeKernelTraits::DblType rhoRef_;
-  NodeKernelTraits::DblType beta_;
 
-  NALU_ALIGNED NodeKernelTraits::DblType forceVector_[NodeKernelTraits::NDimMax];
+  ABLScalarInterpolator ablSrc_;
 
+  unsigned coordinatesID_ {stk::mesh::InvalidOrdinal};
   unsigned dualNodalVolumeID_ {stk::mesh::InvalidOrdinal};
-  unsigned temperatureID_ {stk::mesh::InvalidOrdinal};
 
-  NALU_ALIGNED NodeKernelTraits::DblType gravity_[NodeKernelTraits::NDimMax];
-
+  const int nDim_;
 };
 
-} // namespace nalu
-} // namespace Sierra
+}  // nalu
+}  // sierra
 
-#endif
+
+#endif /* ENTHLAPYABLFORCENODEKERNEL_H */

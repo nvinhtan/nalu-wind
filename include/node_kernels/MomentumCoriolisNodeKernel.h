@@ -5,32 +5,32 @@
 /*  directory structure                                                   */
 /*------------------------------------------------------------------------*/
 
-#ifndef MOMENTUMBOUSSINESQNODEKERNEL_h
-#define MOMENTUMBOUSSINESQNODEKERNEL_h
+#ifndef MOMENTUMCORIOLISSRCNODEKERNEL_H
+#define MOMENTUMCORIOLISSRCNODEKERNEL_H
 
 #include "node_kernels/NodeKernel.h"
+#include "CoriolisSrc.h"
 
 #include "stk_mesh/base/BulkData.hpp"
 #include "stk_ngp/Ngp.hpp"
 
-namespace sierra{
-namespace nalu{
+namespace sierra {
+namespace nalu {
 
 class SolutionOptions;
 
-class MomentumBoussinesqNodeKernel : public NGPNodeKernel<MomentumBoussinesqNodeKernel>
+class MomentumCoriolisNodeKernel : public NGPNodeKernel<MomentumCoriolisNodeKernel>
 {
 public:
-  MomentumBoussinesqNodeKernel(
+  MomentumCoriolisNodeKernel(
     const stk::mesh::BulkData&,
-    const std::vector<double>&,
     const SolutionOptions&);
 
   KOKKOS_FUNCTION
-  MomentumBoussinesqNodeKernel() = default;
+  MomentumCoriolisNodeKernel() = default;
 
   KOKKOS_FUNCTION
-  virtual ~MomentumBoussinesqNodeKernel() = default;
+  virtual ~MomentumCoriolisNodeKernel() = default;
 
   virtual void setup(Realm&) override;
 
@@ -41,23 +41,19 @@ public:
     const stk::mesh::FastMeshIndex&) override;
 
 private:
-  ngp::Field<double> dualNodalVolume_;
-  ngp::Field<double> temperature_;
-  const int nDim_;
-  NodeKernelTraits::DblType tRef_;
-  NodeKernelTraits::DblType rhoRef_;
-  NodeKernelTraits::DblType beta_;
+  const CoriolisSrc cor_;
 
-  NALU_ALIGNED NodeKernelTraits::DblType forceVector_[NodeKernelTraits::NDimMax];
+  ngp::Field<double> dualNodalVolume_;
+  ngp::Field<double> densityNp1_;
+  ngp::Field<double> velocityNp1_;
 
   unsigned dualNodalVolumeID_ {stk::mesh::InvalidOrdinal};
-  unsigned temperatureID_ {stk::mesh::InvalidOrdinal};
-
-  NALU_ALIGNED NodeKernelTraits::DblType gravity_[NodeKernelTraits::NDimMax];
-
+  unsigned densityNp1ID_ {stk::mesh::InvalidOrdinal};
+  unsigned velocityNp1ID_ {stk::mesh::InvalidOrdinal};
 };
 
-} // namespace nalu
-} // namespace Sierra
+}  // nalu
+}  // sierra
 
-#endif
+
+#endif /* MOMENTUMCORIOLISSRCNODEKERNEL_H */

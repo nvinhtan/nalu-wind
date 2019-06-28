@@ -1,7 +1,13 @@
 add_sources(GlobalSourceList
+  ContinuityMassBDFNodeKernel.C
+  EnthalpyABLForceNodeKernel.C
+  MomentumABLForceNodeKernel.C
   MomentumBodyForceNodeKernel.C
   MomentumBoussinesqNodeKernel.C
   MomentumMassBDFNodeKernel.C
   MomentumActuatorNodeKernel.C
+  MomentumCoriolisNodeKernel.C
   ScalarMassBDFNodeKernel.C
+  TurbKineticEnergyRodiNodeKernel.C
+  WallDistNodeKernel.C
   )
