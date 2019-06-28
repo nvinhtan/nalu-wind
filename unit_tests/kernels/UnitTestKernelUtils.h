@@ -605,7 +605,6 @@ public:
 
   virtual ~KsgsKernelHex8Mesh() = default;
 
-  using LowMachKernelHex8Mesh::fill_mesh_and_init_fields;
   virtual void fill_mesh_and_init_fields(
     bool doPerturb = false, bool generateSidesets = false) override
   {
