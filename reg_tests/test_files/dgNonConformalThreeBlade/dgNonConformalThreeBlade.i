@@ -8,11 +8,12 @@ linear_solvers:
   - name: solve_scalar
     type: tpetra
     method: gmres
-    preconditioner: sgs
+    preconditioner: muelu
     tolerance: 1e-5
     max_iterations: 50
     kspace: 50
-    output_level: 0
+    output_level: 1
+    muelu_xml_file_name: ../../xml/milestone.xml
 
   - name: solve_cont
     type: tpetra
@@ -21,7 +22,7 @@ linear_solvers:
     tolerance: 1e-5
     max_iterations: 50
     kspace: 50
-    output_level: 0
+    output_level: 1
     muelu_xml_file_name: ../../xml/milestone.xml
 
 realms:

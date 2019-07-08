@@ -72,14 +72,14 @@ void pack_lengths_to_comm(stk::CommNeighbors& commNeighbors,
                           const LinSys::GlobalOrdinal * colEntityTpetIds,
                           const int* colOwners);
 
-/* void add_lengths_to_comm(const stk::mesh::BulkData&  /\* bulk *\/, */
-/*                          stk::CommNeighbors& commNeighbors, */
-/*                          int entity_a_owner, */
-/*                          stk::mesh::EntityId entityId_a, */
-/*                          unsigned numDof, */
-/*                          unsigned numColEntities, */
-/*                          const stk::mesh::EntityId* colEntityIds, */
-/*                          const int* colOwners); */
+void add_lengths_to_comm(const stk::mesh::BulkData&  /* bulk */,
+                         stk::CommNeighbors& commNeighbors,
+                         int entity_a_owner,
+                         stk::mesh::EntityId entityId_a,
+                         unsigned numDof,
+                         unsigned numColEntities,
+                         const stk::mesh::EntityId* colEntityIds,
+                         const int* colOwners);
 
 void communicate_remote_columns(const std::vector<int>& neighborProcs,
                                 stk::CommNeighbors& commNeighbors,
@@ -88,6 +88,14 @@ void communicate_remote_columns(const std::vector<int>& neighborProcs,
                                 LinSys::DeviceRowLengths& deviceLocallyOwnedRowLengths,
                                 std::set<std::pair<int,LinSys::GlobalOrdinal> >& communicatedColIndices);
 
+
+void communicate_remote_columns(const stk::mesh::BulkData& bulk,
+                                const std::vector<int>& neighborProcs,
+                                stk::CommNeighbors& commNeighbors,
+                                unsigned numDof,
+                                const Teuchos::RCP<LinSys::Map>& ownedRowsMap,
+                                LinSys::DeviceRowLengths& deviceLocallyOwnedRowLengths,
+                                std::set<std::pair<int, LinSys::GlobalOrdinal> >& communicatedColIndices);
 
 void insert_single_dof_row_into_graph(LocalGraphArrays& crsGraph, 
                                       LinSys::LocalOrdinal rowLid,

@@ -154,28 +154,6 @@ void add_to_length(LinSys::DeviceRowLengths& v_owned, LinSys::DeviceRowLengths& 
     }
 }
 
-// void add_lengths_to_comm(const stk::mesh::BulkData&  /* bulk */,
-//                          stk::CommNeighbors& commNeighbors,
-//                          int entity_a_owner,
-//                          stk::mesh::EntityId entityId_a,
-//                          unsigned numDof,
-//                          unsigned numColEntities,
-//                          const stk::mesh::EntityId* colEntityIds,
-//                          const int* colOwners)
-// {
-//     int owner = entity_a_owner;
-//     stk::CommBufferV& sbuf = commNeighbors.send_buffer(owner);
-//     LinSys::GlobalOrdinal rowGid = GID_(entityId_a, numDof , 0);
-
-//     sbuf.pack(rowGid);
-//     sbuf.pack(numColEntities*2);
-//     for(unsigned c=0; c<numColEntities; ++c) {
-//         LinSys::GlobalOrdinal colGid0 = GID_(colEntityIds[c], numDof , 0);
-//         sbuf.pack(colGid0);
-//         sbuf.pack(colOwners[c]);
-//     }
-// }
-
 void pack_lengths_to_comm(stk::CommNeighbors& commNeighbors,
                           int entity_a_owner,
                           LinSys::GlobalOrdinal tpetGid_a,
@@ -190,6 +168,66 @@ void pack_lengths_to_comm(stk::CommNeighbors& commNeighbors,
       LinSys::GlobalOrdinal tpetColGid0 = colEntityTpetIds[c];
       sbuf.pack(tpetColGid0);
       sbuf.pack(colOwners[c]);
+    }
+}
+void add_lengths_to_comm(const stk::mesh::BulkData&  /* bulk */,
+                         stk::CommNeighbors& commNeighbors,
+                         int entity_a_owner,
+                         stk::mesh::EntityId entityId_a,
+                         unsigned numDof,
+                         unsigned numColEntities,
+                         const stk::mesh::EntityId* colEntityIds,
+                         const int* colOwners)
+{
+    int owner = entity_a_owner;
+    stk::CommBufferV& sbuf = commNeighbors.send_buffer(owner);
+    LinSys::GlobalOrdinal rowGid = GID_(entityId_a, numDof , 0);
+
+    sbuf.pack(rowGid);
+    sbuf.pack(numColEntities*2);
+    for(unsigned c=0; c<numColEntities; ++c) {
+        LinSys::GlobalOrdinal colGid0 = GID_(colEntityIds[c], numDof , 0);
+        sbuf.pack(colGid0);
+        sbuf.pack(colOwners[c]);
+    }
+}
+void communicate_remote_columns(const stk::mesh::BulkData& bulk,
+                                const std::vector<int>& neighborProcs,
+                                stk::CommNeighbors& commNeighbors,
+                                unsigned numDof,
+                                const Teuchos::RCP<LinSys::Map>& ownedRowsMap,
+                                LinSys::DeviceRowLengths& deviceLocallyOwnedRowLengths,
+                                std::set<std::pair<int, LinSys::GlobalOrdinal> >& communicatedColIndices)
+{
+    commNeighbors.communicate();
+
+    for(int p : neighborProcs) {
+        stk::CommBufferV& rbuf = commNeighbors.recv_buffer(p);
+        size_t bufSize = rbuf.size_in_bytes();
+        while(rbuf.size_in_bytes() > 0) {
+            LinSys::GlobalOrdinal rowGid = 0;
+            rbuf.unpack(rowGid);
+            unsigned len = 0;
+            rbuf.unpack(len);
+            unsigned numCols = len/2;
+            LinSys::LocalOrdinal lid = ownedRowsMap->getLocalElement(rowGid);
+            if (lid < 0) {
+                std::cerr<<"P"<<bulk.parallel_rank()<<" lid="<<lid<<" for rowGid="<<rowGid<<" sent from proc "<<p<<std::endl;
+            }
+            for(unsigned d=0; d<numDof; ++d) {
+                deviceLocallyOwnedRowLengths(lid++) += numCols*numDof;
+            }
+            for(unsigned i=0; i<numCols; ++i) {
+                LinSys::GlobalOrdinal colGid = 0;
+                rbuf.unpack(colGid);
+                int owner = 0;
+                rbuf.unpack(owner);
+                for(unsigned dd=0; dd<numDof; ++dd) {
+                    communicatedColIndices.insert(std::make_pair(owner,colGid++));
+                }
+            }
+        }
+        rbuf.resize(bufSize);
     }
 }
 
