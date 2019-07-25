@@ -269,6 +269,8 @@ TpetraLinearSystem::beginLinearSystemConstruction()
 
   maxOwnedRowId_ = counts.numOwnedNodes * numDof_;
   maxSharedNotOwnedRowId_ = counts.numNodes * numDof_;
+
+  std::cout<<myRank_<<" counts "<<counts.numSkipped<<" "<<counts.numNodes<<" "<<counts.numOwnedNodes<<" "<<counts.numSharedNotOwnedNotLocallyOwned<<" "<<counts.numGhostNodes<<std::endl;
   
   const Teuchos::RCP<LinSys::Comm> tpetraComm = Teuchos::rcp(new LinSys::Comm(bulkData.parallel()));
   ownedRowsMap_ = Teuchos::rcp(new LinSys::Map(Teuchos::OrdinalTraits<Tpetra::global_size_t>::invalid(),
@@ -963,36 +965,6 @@ TpetraLinearSystem::insert_graph_connections(const std::unique_ptr<stk::mesh::En
   }
 }
 
-void insert_communicated_col_indices(const std::vector<int>& neighborProcs,
-                                     stk::CommNeighbors& commNeighbors,
-                                     unsigned numDof,
-                                     LocalGraphArrays& ownedGraph,
-                                     const LinSys::Map& rowMap,
-                                     const LinSys::Map& colMap)
-{
-    std::vector<LocalOrdinal> colLids;
-    for(int p : neighborProcs) {
-        stk::CommBufferV& rbuf = commNeighbors.recv_buffer(p);
-        while(rbuf.size_in_bytes() > 0) {
-            GlobalOrdinal tpetGID=0;
-            rbuf.unpack(tpetGID);
-            unsigned len = 0;
-            rbuf.unpack(len);
-            unsigned numCols = len/2;
-            colLids.resize(numCols);
-            LocalOrdinal rowLid = rowMap.getLocalElement(tpetGID);
-            for(unsigned i=0; i<numCols; ++i) {
-                GlobalOrdinal tpetColGid = 0;
-                rbuf.unpack(tpetColGid);
-                int owner = 0;
-                rbuf.unpack(owner);
-                colLids[i] = colMap.getLocalElement(tpetColGid);
-            }
-            ownedGraph.insertIndices(rowLid++,numCols,colLids.data(), numDof);
-        }
-    }
-}
-
 void
 TpetraLinearSystem::fill_entity_to_row_LID_mapping()
 {
@@ -1307,8 +1279,8 @@ TpetraLinearSystem::finalizeLinearSystem()
   ownedRhs_ = Teuchos::rcp(new LinSys::MultiVector(ownedRowsMap_, 1));
   sharedNotOwnedRhs_ = Teuchos::rcp(new LinSys::MultiVector(sharedNotOwnedRowsMap_, 1));
 
-  ownedLocalRhs_ = ownedRhs_->getLocalView<sierra::nalu::DeviceSpace>();
-  sharedNotOwnedLocalRhs_ = sharedNotOwnedRhs_->getLocalView<sierra::nalu::DeviceSpace>();
+  ownedLocalRhs_ = ownedRhs_->getLocalViewDevice();
+  sharedNotOwnedLocalRhs_ = sharedNotOwnedRhs_->getLocalViewDevice() ;
 
   sln_ = Teuchos::rcp(new LinSys::MultiVector(ownedRowsMap_, 1));
 

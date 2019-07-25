@@ -154,39 +154,25 @@ void add_to_length(LinSys::DeviceRowLengths& v_owned, LinSys::DeviceRowLengths& 
     }
 }
 
-void pack_lengths_to_comm(stk::CommNeighbors& commNeighbors,
-                          int entity_a_owner,
-                          LinSys::GlobalOrdinal tpetGid_a,
-                          unsigned numColEntities,
-                          const LinSys::GlobalOrdinal * colEntityTpetIds,
-                          const int* colOwners)
-{   
-    stk::CommBufferV& sbuf = commNeighbors.send_buffer(entity_a_owner);
-    sbuf.pack(tpetGid_a);
+void add_lengths_to_comm(const stk::mesh::BulkData&  /* bulk */,
+                         stk::CommNeighbors& commNeighbors,
+                         int entity_a_owner,
+                         stk::mesh::EntityId entityId_a,
+                         unsigned numDof,
+                         unsigned numColEntities,
+                         const stk::mesh::EntityId* colEntityIds,
+                         const int* colOwners)
+{
+    int owner = entity_a_owner;
+    stk::CommBufferV& sbuf = commNeighbors.send_buffer(owner);
+    LinSys::GlobalOrdinal rowGid = GID_(entityId_a, numDof , 0);
+
+    sbuf.pack(rowGid);
     sbuf.pack(numColEntities*2);
     for(unsigned c=0; c<numColEntities; ++c) {
-      LinSys::GlobalOrdinal tpetColGid0 = colEntityTpetIds[c];
-      sbuf.pack(tpetColGid0);
-      sbuf.pack(colOwners[c]);
-    }
-}
-
-
-
-void pack_lengths_to_comm(stk::CommNeighbors& commNeighbors,
-                          int entity_a_owner,
-                          LinSys::GlobalOrdinal tpetGid_a,
-                          unsigned numColEntities,
-                          const LinSys::GlobalOrdinal * colEntityTpetIds,
-                          const int* colOwners)
-{   
-    stk::CommBufferV& sbuf = commNeighbors.send_buffer(entity_a_owner);
-    sbuf.pack(tpetGid_a);
-    sbuf.pack(numColEntities*2);
-    for(unsigned c=0; c<numColEntities; ++c) {
-      LinSys::GlobalOrdinal tpetColGid0 = colEntityTpetIds[c];
-      sbuf.pack(tpetColGid0);
-      sbuf.pack(colOwners[c]);
+        LinSys::GlobalOrdinal colGid0 = GID_(colEntityIds[c], numDof , 0);
+        sbuf.pack(colGid0);
+        sbuf.pack(colOwners[c]);
     }
 }
 
