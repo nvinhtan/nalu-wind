@@ -253,7 +253,6 @@ TpetraLinearSystem::beginLinearSystemConstruction()
 
       if (status & DS_OwnedDOF) {
         currentCounts.numNodes++;
-        //        tmpowned.push_back(bulkData.identifier(node));
         currentCounts.numOwnedNodes++;
       }
 
@@ -268,7 +267,6 @@ TpetraLinearSystem::beginLinearSystemConstruction()
     }
   }, counts,"Nalu::TpetraLinearSystem::beginLinearSystemConstructionA");
 
-
   maxOwnedRowId_ = counts.numOwnedNodes * numDof_;
   maxSharedNotOwnedRowId_ = counts.numNodes * numDof_;
   
@@ -277,7 +275,6 @@ TpetraLinearSystem::beginLinearSystemConstruction()
                                                maxOwnedRowId_, // must have *numDof_ 
                                                1,
                                                tpetraComm));
-
   realm_.tpetILower_   = ownedRowsMap_->getMinGlobalIndex();
   realm_.tpetIUpper_   = ownedRowsMap_->getMaxGlobalIndex();
   realm_.tpetNumNodes_ = ownedRowsMap_->getGlobalNumElements();
@@ -390,7 +387,9 @@ TpetraLinearSystem::beginLinearSystemConstruction()
     const auto naluId = *stk::mesh::field_data(*realm_.naluGlobalId_, entity);
     auto mentity = get_entity_master(bulkData, entity, naluId);
     auto tpetId_master = *stk::mesh::field_data(*realm_.tpetGlobalId_, mentity);
+
     assert(tpetId_master != std::numeric_limits<GlobalOrdinal>::max());
+
     assert(tpetId_master != 0);
     myLIDs_[naluId] = numDof_ * localId++; 
     int owner = bulkData.parallel_owner_rank(entity);

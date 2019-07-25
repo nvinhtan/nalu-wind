@@ -95,7 +95,7 @@ void communicate_remote_columns(const stk::mesh::BulkData& bulk,
                                 unsigned numDof,
                                 const Teuchos::RCP<LinSys::Map>& ownedRowsMap,
                                 LinSys::DeviceRowLengths& deviceLocallyOwnedRowLengths,
-                                std::set<std::pair<int, LinSys::GlobalOrdinal> >& communicatedColIndices);
+                                std::set<std::pair<int,LinSys::GlobalOrdinal> >& communicatedColIndices);
 
 void insert_single_dof_row_into_graph(LocalGraphArrays& crsGraph, 
                                       LinSys::LocalOrdinal rowLid,
