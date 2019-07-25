@@ -365,9 +365,6 @@ TpetraLinearSystem::beginLinearSystemConstruction()
       }
     }
   }
-
-  // cbl 17-Apr-19: Kokkos is supposed to have a unique_sort; It might also be faster to use an unordered_map than to sort then unique the shared_not_owned. 
-
   std::sort(shared_not_owned_nodes, 
             shared_not_owned_nodes+shared_not_owned_nodes_csz, 
             CompareEntityById(bulkData, realm_.naluGlobalId_) );
@@ -380,6 +377,7 @@ TpetraLinearSystem::beginLinearSystemConstruction()
   shared_not_owned_nodes_csz = unq_snonc;
 
   std::unique_ptr<LinSys::GlobalOrdinal[]> sharedNotOwnedGids(new LinSys::GlobalOrdinal[counts.numSharedNotOwnedNotLocallyOwned*numDof_]);
+
   unsigned sharedNotOwnedGids_csz=0;
   sharedPids_ = std::unique_ptr<int[]>(new  int [shared_not_owned_nodes_csz*numDof_]);
   for (unsigned inode=0; inode < shared_not_owned_nodes_csz; ++inode) {
@@ -391,11 +389,11 @@ TpetraLinearSystem::beginLinearSystemConstruction()
     assert(tpetId_master != 0);
     myLIDs_[naluId] = numDof_ * localId++; 
     int owner = bulkData.parallel_owner_rank(entity);
+    if(owner == myRank_) continue;
     for(unsigned idof=0; idof < numDof_; ++ idof) {
       const LinSys::GlobalOrdinal tgid =  tpetId_master+idof;
       assert(tgid !=0 && tgid != std::numeric_limits<GlobalOrdinal>::max());
       //      if(tgid >= iLower_ && tgid < iUpper_ ) continue; // master is on this rank, skip
-      if(owner == myRank_) continue;
       assert(sharedNotOwnedGids_csz < shared_not_owned_nodes_csz*numDof_);
       sharedPids_       [sharedNotOwnedGids_csz] = owner;
       sharedNotOwnedGids[sharedNotOwnedGids_csz]=tgid;
@@ -747,6 +745,24 @@ void TpetraLinearSystem::copy_stk_to_tpetra(stk::mesh::FieldBase * stkField,
   }
 }
 
+
+void pack_lengths_to_comm(stk::CommNeighbors& commNeighbors,
+                          int entity_a_owner,
+                          GlobalOrdinal tpetGid_a,
+                          unsigned numColEntities,
+                          const GlobalOrdinal * colEntityTpetIds,
+                          const int* colOwners)
+{   
+    stk::CommBufferV& sbuf = commNeighbors.send_buffer(entity_a_owner);
+    sbuf.pack(tpetGid_a);
+    sbuf.pack(numColEntities*2);
+    for(unsigned c=0; c<numColEntities; ++c) {
+      GlobalOrdinal tpetColGid0 = colEntityTpetIds[c];
+      sbuf.pack(tpetColGid0);
+      sbuf.pack(colOwners[c]);
+    }
+}
+
 void
 TpetraLinearSystem::compute_send_lengths(const std::unique_ptr<stk::mesh::Entity[]>& rowEntities,
                                          uint & rowEntities_csz,
@@ -893,6 +909,7 @@ TpetraLinearSystem::compute_graph_row_lengths(const std::unique_ptr<stk::mesh::E
   }
 }
 
+
 void
 TpetraLinearSystem::insert_graph_connections(const std::unique_ptr<stk::mesh::Entity[]>& rowEntities,
                                              uint & rowEntities_csz,
@@ -945,7 +962,6 @@ TpetraLinearSystem::insert_graph_connections(const std::unique_ptr<stk::mesh::En
     }
   }
 }
-
 
 void insert_communicated_col_indices(const std::vector<int>& neighborProcs,
                                      stk::CommNeighbors& commNeighbors,
@@ -1054,7 +1070,7 @@ void TpetraLinearSystem::storeOwnersForShared()
   }
 }
 
-void fill_owned_and_shared_then_nonowned_ordered_by_proc(std::unique_ptr<GlobalOrdinal[]>& totalGids,
+void fill_owned_and_shared_then_nonowned_ordered_by_proc(std::unique_ptr<LinSys::GlobalOrdinal[]>& totalGids,
                                                          unsigned &totalGids_csz,
                                                          std::unique_ptr<int[]>& srcPids,
                                                          unsigned & srcPids_csz,
