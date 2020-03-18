@@ -33,6 +33,94 @@ public:
 
   virtual void zeroSystem();
 
+  // Graph/Matrix Construction
+  virtual void buildNodeGraph(const stk::mesh::PartVector & parts);// for nodal assembly (e.g., lumped mass and source)
+  virtual void buildFaceToNodeGraph(const stk::mesh::PartVector & parts);// face->node assembly
+  virtual void buildEdgeToNodeGraph(const stk::mesh::PartVector & parts);// edge->node assembly
+  virtual void buildElemToNodeGraph(const stk::mesh::PartVector & parts);// elem->node assembly
+  virtual void buildReducedElemToNodeGraph(const stk::mesh::PartVector&);// elem (nearest nodes only)->node assembly
+  virtual void buildFaceElemToNodeGraph(const stk::mesh::PartVector & parts);// elem:face->node assembly
+  virtual void buildNonConformalNodeGraph(const stk::mesh::PartVector&);// nonConformal->elem_node assembly
+  //virtual void buildOversetNodeGraph(const stk::mesh::PartVector&);// overset->elem_node assembly
+
+  /** Tag rows that must be handled as a Dirichlet BC node
+   *
+   *  @param[in] partVec List of parts that contain the Dirichlet nodes
+   */
+  virtual void buildDirichletNodeGraph(const stk::mesh::PartVector&);
+
+  /** Tag rows that must be handled as a Dirichlet  node
+   *
+   *  @param[in] entities List of nodes where Dirichlet conditions are applied
+   *
+   *  \sa sierra::nalu::FixPressureAtNodeAlgorithm
+   */
+  virtual void buildDirichletNodeGraph(const std::vector<stk::mesh::Entity>&);
+  virtual void buildDirichletNodeGraph(const stk::mesh::NgpMesh::ConnectedNodes);
+
+  sierra::nalu::CoeffApplier* get_coeff_applier();
+  
+  /***************************************************************************************************/
+  /*                     Beginning of HypreLinSysCoeffApplier definition                             */
+  /***************************************************************************************************/
+
+  class HypreUVWLinSysCoeffApplier : public HypreLinSysCoeffApplier
+  {
+  public:
+    
+    HypreUVWLinSysCoeffApplier(unsigned numDof, 
+			       unsigned numPartitions, HypreIntType maxRowID,
+			       HypreIntType iLower, HypreIntType iUpper,
+			       HypreIntType jLower, HypreIntType jUpper,
+			       HypreIntTypeView mat_partition_start,
+			       HypreIntTypeView mat_count,
+			       HypreIntType numMatPtsToAssembleTotal,
+			       HypreIntTypeView rhs_partition_start,
+			       HypreIntTypeView rhs_count,
+			       HypreIntType numRhsPtsToAssembleTotal,
+			       HypreIntTypeView2D partition_node_start,
+			       EntityToHypreIntTypeView entityToLID,
+			       HypreIntTypeUnorderedMap skippedRowsMap);
+
+    KOKKOS_FUNCTION
+    virtual ~HypreUVWLinSysCoeffApplier() {}
+
+    KOKKOS_FUNCTION
+    virtual void sum_into(unsigned numEntities,
+			  const stk::mesh::NgpMesh::ConnectedNodes& entities,
+			  const SharedMemView<int*,DeviceShmem> & localIds,
+			  const SharedMemView<const double*,DeviceShmem> & rhs,
+			  const SharedMemView<const double**,DeviceShmem> & lhs,
+			  unsigned numDof, HypreIntType iLower, HypreIntType iUpper,
+			  HypreIntType partitionIndex);
+
+    KOKKOS_FUNCTION
+    virtual void operator()(unsigned numEntities,
+                            const stk::mesh::NgpMesh::ConnectedNodes& entities,
+                            const SharedMemView<int*,DeviceShmem> & localIds,
+                            const SharedMemView<int*,DeviceShmem> & sortPermutation,
+                            const SharedMemView<const double*,DeviceShmem> & rhs,
+                            const SharedMemView<const double**,DeviceShmem> & lhs,
+                            const char * trace_tag);
+
+    virtual void applyDirichletBCs(Realm & realm, 
+				   stk::mesh::FieldBase * solutionField,
+				   stk::mesh::FieldBase * bcValuesField,
+				   const stk::mesh::PartVector& parts);
+
+    virtual void free_device_pointer();
+
+    virtual sierra::nalu::CoeffApplier* device_pointer();
+
+    unsigned nDim_;
+  };
+
+  /***************************************************************************************************/
+  /*                        End of of HypreLinSysCoeffApplier definition                             */
+  /***************************************************************************************************/
+
+
+
   /** Update coefficients of a particular row(s) in the linear system
    *
    *  The core method of this class, it updates the matrix and RHS based on the
@@ -111,6 +199,8 @@ public:
 protected:
   virtual void finalizeSolver();
 
+  virtual void loadComplete();
+
   virtual void loadCompleteSolver();
 
   void copy_hypre_to_stk(stk::mesh::FieldBase*, std::vector<double>&);
@@ -125,7 +215,8 @@ private:
   mutable std::vector<HYPRE_IJVector> rhs_;
   mutable std::vector<HYPRE_IJVector> sln_;
 
-  const int nDim_{3};
+  const unsigned nDim_{3};
+
 };
 
 }  // nalu

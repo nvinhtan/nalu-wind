@@ -154,6 +154,7 @@ if(ENABLE_HYPRE)
       ${CMAKE_CURRENT_SOURCE_DIR}/HypreLinearSolverConfig.C
       ${CMAKE_CURRENT_SOURCE_DIR}/HypreLinearSystem.C
       ${CMAKE_CURRENT_SOURCE_DIR}/HypreUVWLinearSystem.C
+      ${CMAKE_CURRENT_SOURCE_DIR}/LinearSystemAssembler.C
    )
 endif()
 

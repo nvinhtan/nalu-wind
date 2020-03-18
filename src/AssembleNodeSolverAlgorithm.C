@@ -60,6 +60,9 @@ AssembleNodeSolverAlgorithm::initialize_connectivity()
 void
 AssembleNodeSolverAlgorithm::execute()
 {
+  // I need this for Hypre Assembly. Do not remove
+  auto coeffApplier = coeff_applier();
+
   // Handle transition period, it is likely that most of the user-requested
   // source terms were handled by the NGP version of nodal algorithm
   const size_t supplementalAlgSize = supplementalAlg_.size();

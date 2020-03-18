@@ -25,8 +25,51 @@
 
 #include <unordered_set>
 
+
+#ifndef HYPRE_LINEAR_SYSTEM_DEBUG
+#define HYPRE_LINEAR_SYSTEM_DEBUG
+#endif // HYPRE_LINEAR_SYSTEM_DEBUG
+#undef HYPRE_LINEAR_SYSTEM_DEBUG
+
+#ifndef HYPRE_LINEAR_SYSTEM_DEBUG_DUMP
+#define HYPRE_LINEAR_SYSTEM_DEBUG_DUMP
+#endif // HYPRE_LINEAR_SYSTEM_DEBUG_DUMP
+//#undef HYPRE_LINEAR_SYSTEM_DEBUG_DUMP
+
+#ifndef HYPRE_LINEAR_SYSTEM_DEBUG_LOAD_FROM_CPU
+#define HYPRE_LINEAR_SYSTEM_DEBUG_LOAD_FROM_CPU
+#endif // HYPRE_LINEAR_SYSTEM_DEBUG_LOAD_FROM_CPU
+#undef HYPRE_LINEAR_SYSTEM_DEBUG_LOAD_FROM_CPU
+
+#ifndef HYPRE_LINEAR_SYSTEM_DEBUG_LOAD_FROM_CPU_LISTS
+#define HYPRE_LINEAR_SYSTEM_DEBUG_LOAD_FROM_CPU_LISTS
+#endif // HYPRE_LINEAR_SYSTEM_DEBUG_LOAD_FROM_CPU_LISTS
+#undef HYPRE_LINEAR_SYSTEM_DEBUG_LOAD_FROM_CPU_LISTS
+
+#include "LinearSystemAssembler.h"
+#include "Kokkos_UnorderedMap.hpp"
+
 namespace sierra {
 namespace nalu {
+
+using EntityToHypreIntTypeView = Kokkos::View<HypreIntType*, Kokkos::LayoutRight, LinSysMemSpace>;
+
+using DoubleView = Kokkos::View<double*>;
+using DoubleViewHost = DoubleView::HostMirror;
+
+using DoubleView2D = Kokkos::View<double**>;
+using DoubleView2DHost = DoubleView2D::HostMirror;
+
+using HypreIntTypeView = Kokkos::View<HypreIntType*>;
+using HypreIntTypeViewHost = HypreIntTypeView::HostMirror;
+
+using HypreIntTypeView2D = Kokkos::View<HypreIntType**>;
+using HypreIntTypeView2DHost = HypreIntTypeView2D::HostMirror;
+
+using HypreIntTypeViewScalar = Kokkos::View<HypreIntType>;
+using HypreIntTypeViewScalarHost = HypreIntTypeViewScalar::HostMirror;
+
+using HypreIntTypeUnorderedMap = Kokkos::UnorderedMap<HypreIntType, HypreIntType, LinSysMemSpace>;
 
 /** Nalu interface to populate a Hypre Linear System
  *
@@ -41,6 +84,33 @@ namespace nalu {
 class HypreLinearSystem : public LinearSystem
 {
 public:
+  std::string name_;
+  int numAssembles_=0;
+
+  /* data structures for accumulating the matrix elements */
+  std::vector<std::vector<HypreIntType> > partitionNodeStart_;
+  std::vector<HypreIntType> partitionCount_;
+  std::vector<HypreIntType> count_;
+
+#ifdef HYPRE_LINEAR_SYSTEM_DEBUG_DUMP
+  std::vector<HypreIntType> rows_;
+  std::vector<HypreIntType> cols_;
+  std::vector<double> vals_;
+  std::vector<std::vector<HypreIntType> > rhs_rows_;
+  std::vector<std::vector<double> > rhs_vals_;
+#endif
+
+  EntityToHypreIntTypeView entityToLID_;
+  void fill_entity_to_row_mapping();
+
+  HypreIntType numDataPtsToAssemble() {
+    HypreIntType n=0;
+    for (unsigned i=0; i<partitionCount_.size(); ++i) {
+      n+=partitionCount_[i]*count_[i];
+    }
+    return n;
+  }
+
   // Quiet "partially overridden" compiler warnings.
   using LinearSystem::buildDirichletNodeGraph;
   /**
@@ -58,12 +128,12 @@ public:
   virtual ~HypreLinearSystem();
 
   // Graph/Matrix Construction
-  virtual void buildNodeGraph(const stk::mesh::PartVector&);// for nodal assembly (e.g., lumped mass and source)
-  virtual void buildFaceToNodeGraph(const stk::mesh::PartVector&);// face->node assembly
-  virtual void buildEdgeToNodeGraph(const stk::mesh::PartVector&);// edge->node assembly
-  virtual void buildElemToNodeGraph(const stk::mesh::PartVector&);// elem->node assembly
+  virtual void buildNodeGraph(const stk::mesh::PartVector & parts);// for nodal assembly (e.g., lumped mass and source)
+  virtual void buildFaceToNodeGraph(const stk::mesh::PartVector & parts);// face->node assembly
+  virtual void buildEdgeToNodeGraph(const stk::mesh::PartVector & parts);// edge->node assembly
+  virtual void buildElemToNodeGraph(const stk::mesh::PartVector & parts);// elem->node assembly
   virtual void buildReducedElemToNodeGraph(const stk::mesh::PartVector&);// elem (nearest nodes only)->node assembly
-  virtual void buildFaceElemToNodeGraph(const stk::mesh::PartVector&);// elem:face->node assembly
+  virtual void buildFaceElemToNodeGraph(const stk::mesh::PartVector & parts);// elem:face->node assembly
   virtual void buildNonConformalNodeGraph(const stk::mesh::PartVector&);// nonConformal->elem_node assembly
   virtual void buildOversetNodeGraph(const stk::mesh::PartVector&);// overset->elem_node assembly
   virtual void finalizeLinearSystem();
@@ -81,6 +151,180 @@ public:
    *  \sa sierra::nalu::FixPressureAtNodeAlgorithm
    */
   virtual void buildDirichletNodeGraph(const std::vector<stk::mesh::Entity>&);
+  virtual void buildDirichletNodeGraph(const stk::mesh::NgpMesh::ConnectedNodes);
+
+  sierra::nalu::CoeffApplier* get_coeff_applier();
+
+
+  /***************************************************************************************************/
+  /*                     Beginning of HypreLinSysCoeffApplier definition                             */
+  /***************************************************************************************************/
+
+  class HypreLinSysCoeffApplier : public CoeffApplier
+  {
+  public:
+
+    HypreLinSysCoeffApplier(unsigned numDof, 
+			    unsigned numPartitions, HypreIntType maxRowID,
+			    HypreIntType iLower, HypreIntType iUpper,
+			    HypreIntType jLower, HypreIntType jUpper,
+			    HypreIntTypeView mat_partition_start,
+			    HypreIntTypeView mat_count,
+			    HypreIntType numMatPtsToAssembleTotal,
+			    HypreIntTypeView rhs_partition_start,
+			    HypreIntTypeView rhs_count,
+			    HypreIntType numRhsPtsToAssembleTotal,
+			    HypreIntTypeView2D partition_node_start,
+			    EntityToHypreIntTypeView entityToLID,
+			    HypreIntTypeUnorderedMap skippedRowsMap);
+
+    KOKKOS_FUNCTION
+    virtual ~HypreLinSysCoeffApplier() {
+#ifdef KOKKOS_ENABLE_CUDA
+      if (MatAssembler_) { delete MatAssembler_; MatAssembler_=NULL; }
+      if (RhsAssembler_) { delete RhsAssembler_; RhsAssembler_=NULL; }
+#endif
+    }
+
+    KOKKOS_FUNCTION
+    virtual void resetRows(unsigned,
+                           const stk::mesh::Entity*,
+                           const unsigned,
+                           const unsigned,
+                           const double,
+                           const double) { checkSkippedRows_()=0; }
+
+    KOKKOS_FUNCTION
+    virtual void sum_into(unsigned numEntities,
+			  const stk::mesh::NgpMesh::ConnectedNodes& entities,
+			  const SharedMemView<int*,DeviceShmem> & localIds,
+			  const SharedMemView<const double*,DeviceShmem> & rhs,
+			  const SharedMemView<const double**,DeviceShmem> & lhs,
+			  unsigned numDof, HypreIntType iLower, HypreIntType iUpper,
+			  HypreIntType partitionIndex);
+
+    KOKKOS_FUNCTION
+    virtual void operator()(unsigned numEntities,
+                            const stk::mesh::NgpMesh::ConnectedNodes& entities,
+                            const SharedMemView<int*,DeviceShmem> & localIds,
+                            const SharedMemView<int*,DeviceShmem> &,
+                            const SharedMemView<const double*,DeviceShmem> & rhs,
+                            const SharedMemView<const double**,DeviceShmem> & lhs,
+                            const char * trace_tag);
+
+    virtual void free_device_pointer();
+
+    virtual sierra::nalu::CoeffApplier* device_pointer();
+
+    virtual void resetInternalData();
+
+    virtual void dumpData(std::string name, const int di);
+
+    virtual void applyDirichletBCs(Realm & realm, 
+				   stk::mesh::FieldBase * solutionField,
+				   stk::mesh::FieldBase * bcValuesField,
+				   const stk::mesh::PartVector& parts);
+    
+    virtual void finishAssembly(void * mat, std::vector<void *> rhs, const int di, std::string name);
+
+    //! number of degrees of freedom
+    unsigned numDof_=0;
+    //! number of partitions ... i.e. the number Assemble*Solver calls that write to this set of lists/matrix.
+    unsigned numPartitions_=0;
+    //! Maximum Row ID in the Hypre linear system
+    HypreIntType maxRowID_;
+    //! The lowest row owned by this MPI rank
+    HypreIntType iLower_=0;
+    //! The highest row owned by this MPI rank
+    HypreIntType iUpper_=0;
+    //! The lowest column owned by this MPI rank; currently jLower_ == iLower_
+    HypreIntType jLower_=0;
+    //! The highest column owned by this MPI rank; currently jUpper_ == iUpper_
+    HypreIntType jUpper_=0;
+
+    //! the starting position(s) of the matrix list partitions
+    HypreIntTypeView mat_partition_start_;
+    //! the maximum number of matrix list writes per operator() call
+    HypreIntTypeView mat_count_;
+    //! an upper bound on the total number of matrix list points
+    HypreIntType numMatPtsToAssembleTotal_=0;
+    //! the starting position(s) of the rhs list partitions
+    HypreIntTypeView rhs_partition_start_;
+    //! the maximum number of rhs list writes per operator() call
+    HypreIntTypeView rhs_count_;
+    //! an upper bound on the total number of rhs list points
+    HypreIntType numRhsPtsToAssembleTotal_=0;
+    //! for each partition, this a starting point for where to accumulate in the list
+    HypreIntTypeView2D partition_node_start_;
+
+    //! A way to map the entity local offset to the hypre id
+    EntityToHypreIntTypeView entityToLID_;
+    //! unordered map for skipped rows
+    HypreIntTypeUnorderedMap skippedRowsMap_;
+
+    //! this is the pointer to the device function ... that assembles the lists
+    HypreLinSysCoeffApplier* devicePointer_;
+
+    /* initialize partition_index_ to -1 .Then, the first call to get_coeff_applier will bump it to 0.
+       Subsequent calls will bump it by 1 (mod numPartitions_) */
+    HypreIntTypeViewScalar partition_index_;
+    HypreIntTypeViewScalarHost partition_index_host;
+
+    //! 2D data structure to atomically update for augmenting the list */
+    HypreIntTypeView2D partition_node_count_;
+
+    HypreIntTypeViewHost mat_count_host;
+    HypreIntTypeViewHost rhs_count_host;
+    HypreIntTypeViewHost mat_partition_start_host;
+    HypreIntTypeViewHost rhs_partition_start_host;
+
+    HypreIntTypeViewScalar mat_partition_total_;
+    HypreIntTypeViewScalar rhs_partition_total_;    
+    
+    //! list for the row indices ... later to be assembled to the CSR matrix in Hypre
+    HypreIntTypeView rows_;
+    //! list for the column indices ... later to be assembled to the CSR matrix in Hypre
+    HypreIntTypeView cols_;
+    //! list for the values ... later to be assembled to the CSR matrix in Hypre
+    DoubleView vals_;
+    //! list for the rhs row indices ... later to be assembled to the rhs vector in Hypre
+    HypreIntTypeView2D rhs_rows_;
+    //! list for the rhs values ... later to be assembled to the rhs vector in Hypre
+    DoubleView2D rhs_vals_;
+
+    //! Flags indicating whether a particular row in the HYPRE matrix has been filled or not.
+    enum RowFillStatus
+      {
+	RS_UNFILLED = 0, //!< Default status
+	RS_FILLED        //!< sumInto filps to filled status once a row has been acted on
+      };    
+    //! Track rows that have been updated during the assembly process
+    Kokkos::View<RowFillStatus*> row_filled_;
+
+    //! mirror views
+    HypreIntTypeViewHost rows_host;
+    HypreIntTypeViewHost cols_host;
+    DoubleViewHost vals_host;
+    HypreIntTypeView2DHost rhs_rows_host;
+    DoubleView2DHost rhs_vals_host;
+    Kokkos::View<RowFillStatus*>::HostMirror row_filled_host;
+
+    //! Total number of rows owned by this particular MPI rank
+    HypreIntType numRows_;
+    //! Flag indicating that sumInto should check to see if rows must be skipped
+    HypreIntTypeViewScalar checkSkippedRows_;
+
+#ifdef KOKKOS_ENABLE_CUDA
+    //! The Matrix assembler
+    MatrixAssembler<HypreIntType> * MatAssembler_=nullptr;
+    //! The Rhs assembler
+    RhsAssembler<HypreIntType> * RhsAssembler_=nullptr;
+#endif
+  };
+
+  /***************************************************************************************************/
+  /*                        End of of HypreLinSysCoeffApplier definition                             */
+  /***************************************************************************************************/
 
   /** Reset the matrix and rhs data structures for the next iteration/timestep
    *
@@ -172,6 +416,7 @@ public:
     const double,
     const double)
   {
+    printf("%s %s %d\n",__FILE__,__FUNCTION__,__LINE__);
     checkSkippedRows_ = false;
   }
 
@@ -183,6 +428,7 @@ public:
     const double,
     const double)
   {
+    printf("%s %s %d\n",__FILE__,__FUNCTION__,__LINE__);
     checkSkippedRows_ = false;
   }
 
@@ -206,6 +452,7 @@ public:
   virtual void writeSolutionToFile(const char * /* filename */, bool /* useOwned */ =true) {}
 
 protected:
+
   /** Prepare the instance for system construction
    *
    *  During initialization, this creates the hypre data structures via API
@@ -217,6 +464,9 @@ protected:
   virtual void finalizeSolver();
 
   virtual void loadCompleteSolver();
+
+  virtual void dumpHypreMatrix();
+  virtual void dumpHypreRhs();
 
   /** Return the Hypre ID corresponding to the given STK node entity
    *

@@ -119,7 +119,6 @@ LinearSystem *LinearSystem::create(Realm& realm, const unsigned numDof, Equation
   case PT_HYPRE:
     realm.hypreIsActive_ = true;
     return new HypreLinearSystem(realm, numDof, eqSys, solver);
-    break;
 
   case PT_HYPRE_SEGREGATED:
     realm.hypreIsActive_ = true;

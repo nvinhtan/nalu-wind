@@ -95,6 +95,9 @@ if(NOT ENABLE_CUDA)
   # Regression tests
   #=============================================================================
   add_test_r_cat(ablNeutralEdge 8 2)
+  add_test_r_cat(ablNeutralEdgeTrilinos 1 2)
+  add_test_r_cat(ablNeutralEdgeHypre 1 2)
+
   add_test_r(ablNeutralEdgeSegregated 8)
   add_test_r(ablStableElem 4)
   add_test_r_rst(ablUnstableEdge 4)
@@ -167,8 +170,8 @@ if(NOT ENABLE_CUDA)
   endif()
 
   if(ENABLE_HYPRE)
-    add_test_r(airfoilRANSEdge 2)
-    add_test_r(airfoilRANSElem 2)
+    add_test_r(airfoilRANSEdge 1)
+    add_test_r(airfoilRANSElem 1)
     add_test_r(dgncThreeBladeHypre 2)
     add_test_r_rst(tamsChannelEdge 4)
     add_test_r_rst(tamsChannelElem 4)
@@ -216,7 +219,13 @@ else(NOT ENABLE_CUDA)
   # Regression tests
   #=============================================================================
   add_test_r(ablNeutralEdge 2)
+  add_test_r(ablNeutralEdgeTrilinos 1)
   add_test_r(conduction_p4 2)
+
+  if(ENABLE_HYPRE)
+    add_test_r(airfoilRANSEdge 1)
+    add_test_r_cat(ablNeutralEdgeHypre 1 2)
+  endif(ENABLE_HYPRE)
 
   #=============================================================================
   # GPU unit tests

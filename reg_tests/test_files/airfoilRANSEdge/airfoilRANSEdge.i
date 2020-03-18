@@ -16,8 +16,8 @@ linear_solvers:
     type: tpetra
     method: gmres
     preconditioner: sgs
-    tolerance: 1e-5
-    max_iterations: 10
+    tolerance: 1e-10
+    max_iterations: 20
     kspace: 75
     output_level: 0
     write_matrix_files: no
@@ -26,7 +26,7 @@ linear_solvers:
     type: hypre
     method: hypre_gmres
     preconditioner: boomerAMG
-    tolerance: 1e-5
+    tolerance: 1e-10
     max_iterations: 200
     kspace: 75
     output_level: 0
